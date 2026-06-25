@@ -81,14 +81,18 @@ class Filterable
      * Create a new Filterable instance.
      * @param array $filterable
      * @param array $sortable
+     * @param array $cache
      */
-    public function __construct(array $filterable = [], array $sortable = [])
+    public function __construct(array $filterable = [], array $sortable = [], array $cache = [])
     {
         if (!empty($filterable)) {
             $this->filterable = $filterable;
         }
         if (!empty($sortable)) {
             $this->sortable = $sortable;
+        }
+        if (!empty($cache)) {
+            $this->cache = $cache;
         }
     }
 

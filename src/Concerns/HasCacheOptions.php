@@ -14,7 +14,7 @@ trait HasCacheOptions
      */
     public function isCacheEnabled(): bool
     {
-        return $this->cache['enabled'] ?? false;
+        return !empty($this->cache);
     }
 
     /**

@@ -5,48 +5,48 @@ namespace Jurager\Filterable\Cache;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
-/**
- * Flushes tagged cache entries when a model is mutated.
- * Requires a tag-capable cache driver (Redis, Memcached).
- */
 class FilterableCacheObserver
 {
-    /**
-     * @param array $tags
-     * @param string|null $store
-     */
-    public function __construct(
-        private readonly array $tags,
-        private readonly ?string $store = null,
-    ) {
-    }
-
     public function saved(Model $model): void
     {
-        $this->flush();
+        $this->invalidate($model);
     }
 
     public function deleted(Model $model): void
     {
-        $this->flush();
+        $this->invalidate($model);
     }
 
     public function restored(Model $model): void
     {
-        $this->flush();
+        $this->invalidate($model);
     }
 
     public function forceDeleted(Model $model): void
     {
-        $this->flush();
+        $this->invalidate($model);
     }
 
-    private function flush(): void
+    protected function invalidate(Model $model): void
     {
+        if (!method_exists($model, 'filterableCacheConfig')) {
+            return;
+        }
+
+        $config = $model->filterableCacheConfig();
+
+        if (empty($config)) {
+            return;
+        }
+
+        $tags = $config['tags'] ?? [$model->getTable()];
+
+        if (empty($tags)) {
+            return;
+        }
+
         try {
-            ($this->store ? Cache::store($this->store) : Cache::store())
-                ->tags($this->tags)
-                ->flush();
+            Cache::tags($tags)->flush();
         } catch (\BadMethodCallException) {
             // Driver does not support tags — skip silently.
         }

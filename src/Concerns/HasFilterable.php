@@ -4,6 +4,7 @@ namespace Jurager\Filterable\Concerns;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Model;
 use Jurager\Filterable\Cache\FilterableCacheObserver;
 use Jurager\Filterable\Contracts\FieldResolverInterface;
 use Jurager\Filterable\Contracts\RelationResolverInterface;
@@ -11,45 +12,21 @@ use Jurager\Filterable\Contracts\SortResolverInterface;
 use Jurager\Filterable\Filterable;
 use Jurager\Filterable\Query\FilterableBuilder;
 
-/**
- * Attaches Filterable to an Eloquent model and enhances route model binding.
- * Declare $filterable and $sortable on the model, or override newFilterable() to return a custom subclass.
- *
- * Third-party resolvers are registered via a single container tag:
- *   $this->app->tag([MyResolver::class], 'filterable.resolvers');
- *
- * @property array $filterable
- * @property array $sortable
- */
 trait HasFilterable
 {
-    /**
-     * Register FilterableCacheObserver when caching is enabled.
-     * @return void
-     */
     public static function bootHasFilterable(): void
     {
-        // Static guard prevents duplicate observer registration under Octane.
-        // Octane resets Model::$booted each request but not Model::$observers.
         static $registered = [];
 
-        if (isset($registered[static::class])) {
-            return;
-        }
+        $modelClass = static::class;
 
-        $model      = new static();
-        $filterable = $model->newFilterable();
-        $enabled    = $filterable->isCacheEnabled() || (bool) config('filterable.cache.enabled', false);
-
-        if (!$enabled) {
-            return;
-        }
-
-        $tags = $filterable->getCacheTags() ?: [$model->getTable()];
-
-        static::observe(new FilterableCacheObserver($tags));
-
-        $registered[static::class] = true;
+        static::whenBooted(function () use (&$registered, $modelClass): void {
+            if (isset($registered[$modelClass])) {
+                return;
+            }
+            $registered[$modelClass] = true;
+            $modelClass::observe(new FilterableCacheObserver());
+        });
     }
 
     /**
@@ -61,6 +38,11 @@ trait HasFilterable
         return new FilterableBuilder($query);
     }
 
+    public function filterableCacheConfig(): array
+    {
+        return property_exists($this, 'cache') && is_array($this->cache) ? $this->cache : [];
+    }
+
     /**
      * @return Filterable
      */
@@ -69,6 +51,7 @@ trait HasFilterable
         $filterable = new Filterable(
             property_exists($this, 'filterable') ? $this->filterable : [],
             property_exists($this, 'sortable') && is_array($this->sortable) ? $this->sortable : [],
+            $this->filterableCacheConfig(),
         );
 
         foreach (app()->tagged('filterable.resolvers') as $resolver) {
