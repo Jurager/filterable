@@ -56,13 +56,13 @@ The package detects the `pivot` segment and issues a `wherePivot` condition on t
 
 ## Tree Scope
 
-For models that use a NestedSet package (e.g., `kalnoy/nestedset`), use the `tree` operator to include a node and all its descendants:
+For hierarchical models, use the `tree` operator to include a node and all its descendants:
 
 ```
 GET /products?filter[category_id][tree]=5
 ```
 
-This expands to a closure over the NestedSet descendant scope rather than a plain equality check. The `tree` operator must be explicitly listed in `$filterable`:
+This expands to a descendant scope closure rather than a plain equality check. The `tree` operator must be explicitly listed in `$filterable`:
 
 ```php
 protected array $filterable = [

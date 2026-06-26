@@ -14,7 +14,7 @@ The filter format follows the JSON:API convention:
 GET /products?filter[sku][like]=shirt&filter[status]=active&sort=-created_at
 ```
 
-Filtering is strictly allow-listed: only fields defined in $filterable can be applied. Unknown fields are delegated to registered resolvers (such as EAV, NestedSet, or custom implementations) and are ignored when no resolver can handle them.
+Filtering is strictly allow-listed: only fields defined in $filterable can be applied. Unknown fields are delegated to registered resolvers and are ignored when no resolver can handle them.
 
 ## Requirements
 
@@ -30,4 +30,4 @@ Filtering is strictly allow-listed: only fields defined in $filterable can be ap
 - [Relations](relations.md) — dot notation, bracket format, pivot columns, tree scope, included eager loads
 - [Sanitization](sanitization.md) — clean input before it reaches the query builder
 - [Caching](caching.md) — ID-based result caching, automatic cache invalidation
-- [Advanced](advanced.md) — custom resolvers, EAV integration, route binding, events
+- [Advanced](advanced.md) — custom resolvers, route binding, events

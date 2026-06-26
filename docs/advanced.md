@@ -5,7 +5,7 @@ weight: 80
 
 ## Custom Filterable Class
 
-When a model needs custom resolvers, EAV integration, or reusable filter logic, create a class that extends `Filterable` and register it via `newFilterable()`:
+When a model needs custom resolvers or reusable filter logic, create a class that extends `Filterable` and register it via `newFilterable()`:
 
 ```php
 class ProductFilterable extends Filterable
@@ -109,21 +109,6 @@ class PriceWithTaxSortResolver implements SortResolverInterface
 ```
 
 Do **not** add the field to `$sortable` — resolvers are only called for fields not listed there. The resolver itself is the declaration. The `$direction` argument is either `'asc'` or `'desc'`.
-
-## EAV Integration
-
-EAV attribute filters are handled through the field resolver mechanism. The `jurager/eav` package ships a resolver that maps unknown filter keys to EAV attribute lookups:
-
-```php
-use Jurager\Eav\Filtering\EavFieldResolver;
-
-public function __construct()
-{
-    $this->addFieldResolver(app(EavFieldResolver::class));
-}
-```
-
-The EAV resolver intercepts any field not matched by `$filterable` or another resolver and issues the appropriate `whereHas('attributes', ...)` subquery.
 
 ## Route Model Binding
 

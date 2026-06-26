@@ -77,7 +77,7 @@ Custom methods take priority over the operator dispatch for their field.
 
 ## Custom Filterable Class
 
-For complex cases — custom resolvers, EAV integration, reusable filter logic across models — create a class that extends `Filterable` and override `newFilterable()` on the model:
+For complex cases — custom resolvers, reusable filter logic across models — create a class that extends `Filterable` and override `newFilterable()` on the model:
 
 ```php
 class ProductFilterable extends Filterable

@@ -81,7 +81,7 @@ Product::query()->filter()->cacheWhen(fn () => Cache::has('warm'))->paginate();
 
 ## Invalidating on Related Model Changes
 
-When a relation changes independently of the main model (EAV attributes, pivot tables), the main model's observer never fires. Use Laravel's `$touches` to propagate the change:
+When a relation changes independently of the main model (e.g. pivot tables), the main model's observer never fires. Use Laravel's `$touches` to propagate the change:
 
 ```php
 class AttributeValue extends Model

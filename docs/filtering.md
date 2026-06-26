@@ -30,7 +30,7 @@ filter[field][in][]=a&filter[field][in][]=b  — list value
 | `not_null` | — | `IS NOT NULL` |
 | `between` | — | `BETWEEN a AND b` — requires exactly 2 values |
 | `not_between` | — | `NOT BETWEEN a AND b` — requires exactly 2 values |
-| `tree` | — | NestedSet descendant expansion — see [Relations](relations.md#tree-scope) |
+| `tree` | — | Descendant expansion — see [Relations](relations.md#tree-scope) |
 
 Both the short alias (`eq`) and the symbolic alias (`=`) are accepted interchangeably in requests.
 

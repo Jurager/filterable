@@ -16,8 +16,8 @@ Features:
 - OR / AND condition groups
 - Field, relation, and sort resolver interfaces for custom SQL
 - Full-result caching (Redis / Memcached) with automatic tag-based invalidation
-- Entity-Attribute-Value attribute filtering via `jurager/eav` resolver
-- NestedSet descendant expansion via the `tree` operator
+- Custom field, relation, and sort resolvers for extending filter behaviour
+- Tree descendant expansion via the `tree` operator
 
 ## Requirements
 
