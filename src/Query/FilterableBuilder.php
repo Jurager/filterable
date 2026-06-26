@@ -6,34 +6,19 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Jurager\Filterable\Cache\CacheKeyGenerator;
-use Jurager\Filterable\Filterable;
+use Jurager\Filterable\Scopes\PendingFilterScope;
 
 /**
- * Eloquent Builder with deferred filter application and full-result caching.
+ * Eloquent Builder with full-result caching for filterable queries.
  */
 class FilterableBuilder extends Builder
 {
-    private ?Filterable $pendingFilterable = null;
-    private ?array $pendingRaw = null;
     private bool $useCache = false;
     private ?int $cacheTtl = null;
-    private bool $filtersApplied = false;
 
     // Guards against re-entrant cache wrapping: paginate() internally calls get(),
     // which would otherwise try to cache again under the same execution.
     private bool $inCachedExecution = false;
-
-    /**
-     * @param Filterable $filterable
-     * @param array $raw
-     * @return void
-     */
-    public function setPendingFilter(Filterable $filterable, array $raw): void
-    {
-        $this->pendingFilterable = $filterable;
-        $this->pendingRaw        = $raw;
-        $this->useCache          = $filterable->isCacheEnabled();
-    }
 
     /**
      * @param int|null $ttl
@@ -46,19 +31,6 @@ class FilterableBuilder extends Builder
         if ($ttl !== null) {
             $this->cacheTtl = $ttl;
         }
-    }
-
-    /**
-     * @return static
-     */
-    public function applyScopes(): static
-    {
-        if (!$this->filtersApplied && $this->pendingFilterable !== null) {
-            $this->filtersApplied = true;
-            $this->pendingFilterable->apply($this, $this->pendingRaw);
-        }
-
-        return parent::applyScopes();
     }
 
     /**
@@ -143,6 +115,7 @@ class FilterableBuilder extends Builder
 
     /**
      * Wrap a terminal method in Cache::remember when caching is enabled.
+     * Requires a PendingFilterScope to be registered (via ->filter()) to generate the cache key.
      * @param string $method
      * @param array $args
      * @param Closure $execute
@@ -150,19 +123,22 @@ class FilterableBuilder extends Builder
      */
     private function rememberResult(string $method, array $args, Closure $execute): mixed
     {
-        if (!$this->useCache || $this->pendingFilterable === null || $this->inCachedExecution) {
+        /** @var PendingFilterScope|null $scope */
+        $scope = $this->scopes['_filterable_filter'] ?? null;
+
+        if (!$this->useCache || $scope === null || $this->inCachedExecution) {
             return $execute();
         }
 
         $this->inCachedExecution = true;
 
         try {
-            $filterable = $this->pendingFilterable;
+            $filterable = $scope->filterable;
 
             $key = app(CacheKeyGenerator::class)->generate(
                 get_class($filterable),
                 $this->getModel()->getTable(),
-                $this->pendingRaw ?? [],
+                $scope->raw,
                 $method,
                 $args,
             );

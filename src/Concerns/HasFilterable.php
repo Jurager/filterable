@@ -11,6 +11,8 @@ use Jurager\Filterable\Contracts\RelationResolverInterface;
 use Jurager\Filterable\Contracts\SortResolverInterface;
 use Jurager\Filterable\Filterable;
 use Jurager\Filterable\Query\FilterableBuilder;
+use Jurager\Filterable\Scopes\PendingFilterScope;
+use Jurager\Filterable\Scopes\PendingSortScope;
 
 trait HasFilterable
 {
@@ -85,13 +87,9 @@ trait HasFilterable
             return $query;
         }
 
-        if ($query instanceof FilterableBuilder) {
-            $query->setPendingFilter($this->newFilterable(), $raw);
+        $query->withGlobalScope('_filterable_filter', new PendingFilterScope($this->newFilterable(), $raw));
 
-            return $query;
-        }
-
-        return $this->newFilterable()->apply($query, $raw);
+        return $query;
     }
 
     /**
@@ -104,7 +102,9 @@ trait HasFilterable
     {
         $sort = ($request ?? request())->query('sort');
 
-        return $this->newFilterable()->sort($query, is_string($sort) ? $sort : null);
+        $query->withGlobalScope('_filterable_sort', new PendingSortScope($this->newFilterable(), is_string($sort) ? $sort : null));
+
+        return $query;
     }
 
     /**
