@@ -113,6 +113,11 @@ class FilterableBuilder extends Builder
         return $this->rememberResult(__FUNCTION__, [], fn () => parent::doesntExist());
     }
 
+    private function isCacheEnabled(): bool
+    {
+        return $this->useCache || config('filterable.cache.enabled', false);
+    }
+
     /**
      * Wrap a terminal method in Cache::remember when caching is enabled.
      * Requires a PendingFilterScope to be registered (via ->filter()) to generate the cache key.
@@ -126,7 +131,7 @@ class FilterableBuilder extends Builder
         /** @var PendingFilterScope|null $scope */
         $scope = $this->scopes['_filterable_filter'] ?? null;
 
-        if (!$this->useCache || $scope === null || $this->inCachedExecution) {
+        if (!$this->isCacheEnabled() || $scope === null || $this->inCachedExecution) {
             return $execute();
         }
 
