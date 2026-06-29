@@ -4,160 +4,82 @@ namespace Jurager\Filterable\Query;
 
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\CursorPaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Cache;
 use Jurager\Filterable\Cache\CacheKeyGenerator;
 use Jurager\Filterable\Scopes\PendingFilterScope;
 
-/**
- * Eloquent Builder with full-result caching for filterable queries.
- */
 class FilterableBuilder extends Builder
 {
-    private bool $useCache = false;
+    private bool $cacheEnabled = false;
     private ?int $cacheTtl = null;
 
-    // Guards against re-entrant cache wrapping: paginate() internally calls get(),
-    // which would otherwise try to cache again under the same execution.
-    private bool $inCachedExecution = false;
-
-    /**
-     * @param int|null $ttl
-     * @return void
-     */
     public function enableCache(?int $ttl = null): void
     {
-        $this->useCache = true;
-
-        if ($ttl !== null) {
-            $this->cacheTtl = $ttl;
-        }
+        $this->cacheEnabled = true;
+        $this->cacheTtl = $ttl;
     }
 
-    /**
-     * @param array|string $columns
-     * @return \Illuminate\Database\Eloquent\Collection
-     */
-    public function get($columns = ['*'])
-    {
-        return $this->rememberResult(__FUNCTION__, func_get_args(), fn () => parent::get($columns));
-    }
-
-    /**
-     * @param array|string $columns
-     * @return \Illuminate\Database\Eloquent\Model|null
-     */
     public function first($columns = ['*'])
     {
-        return $this->rememberResult(__FUNCTION__, func_get_args(), fn () => parent::first($columns));
+        return $this->cached('first', [$columns], fn () => parent::first($columns));
     }
 
-    /**
-     * @param int|null $perPage
-     * @param array|string $columns
-     * @param string $pageName
-     * @param int|null $page
-     * @param int|null $total
-     * @return \Illuminate\Pagination\LengthAwarePaginator
-     */
     public function paginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null, $total = null)
     {
-        return $this->rememberResult(__FUNCTION__, func_get_args(), fn () => parent::paginate($perPage, $columns, $pageName, $page, $total));
+        return $this->cached(
+            'paginate',
+            $this->pageArgs($perPage, $columns, $pageName, $page),
+            fn () => parent::paginate($perPage, $columns, $pageName, $page, $total),
+        );
     }
 
-    /**
-     * @param int|null $perPage
-     * @param array|string $columns
-     * @param string $pageName
-     * @param int|null $page
-     * @return \Illuminate\Pagination\Paginator
-     */
     public function simplePaginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null)
     {
-        return $this->rememberResult(__FUNCTION__, func_get_args(), fn () => parent::simplePaginate($perPage, $columns, $pageName, $page));
+        return $this->cached(
+            'simplePaginate',
+            $this->pageArgs($perPage, $columns, $pageName, $page),
+            fn () => parent::simplePaginate($perPage, $columns, $pageName, $page),
+        );
     }
 
-    /**
-     * @param int|null $perPage
-     * @param array|string $columns
-     * @param string $cursorName
-     * @param \Illuminate\Pagination\Cursor|string|null $cursor
-     * @return \Illuminate\Pagination\CursorPaginator
-     */
     public function cursorPaginate($perPage = null, $columns = ['*'], $cursorName = 'cursor', $cursor = null)
     {
-        return $this->rememberResult(__FUNCTION__, func_get_args(), fn () => parent::cursorPaginate($perPage, $columns, $cursorName, $cursor));
+        $resolved = (string) ($cursor ?? CursorPaginator::resolveCurrentCursor($cursorName));
+
+        return $this->cached(
+            'cursorPaginate',
+            [$perPage, $columns, $cursorName, $resolved],
+            fn () => parent::cursorPaginate($perPage, $columns, $cursorName, $cursor),
+        );
     }
 
-    /**
-     * @param string $columns
-     * @return int
-     */
-    public function count($columns = '*')
+    private function pageArgs($perPage, $columns, $pageName, $page): array
     {
-        return $this->rememberResult(__FUNCTION__, func_get_args(), fn () => parent::count($columns));
+        return [$perPage, $columns, $pageName, $page ?? Paginator::resolveCurrentPage($pageName)];
     }
 
-    /**
-     * @return bool
-     */
-    public function exists()
+    private function cached(string $method, array $args, Closure $execute): mixed
     {
-        return $this->rememberResult(__FUNCTION__, [], fn () => parent::exists());
-    }
-
-    /**
-     * @return bool
-     */
-    public function doesntExist()
-    {
-        return $this->rememberResult(__FUNCTION__, [], fn () => parent::doesntExist());
-    }
-
-    private function isCacheEnabled(): bool
-    {
-        return $this->useCache || config('filterable.cache.enabled', false);
-    }
-
-    /**
-     * Wrap a terminal method in Cache::remember when caching is enabled.
-     * Requires a PendingFilterScope to be registered (via ->filter()) to generate the cache key.
-     * @param string $method
-     * @param array $args
-     * @param Closure $execute
-     * @return mixed
-     */
-    private function rememberResult(string $method, array $args, Closure $execute): mixed
-    {
-        /** @var PendingFilterScope|null $scope */
         $scope = $this->scopes['_filterable_filter'] ?? null;
 
-        if (!$this->isCacheEnabled() || $scope === null || $this->inCachedExecution) {
+        if (! $scope instanceof PendingFilterScope) {
             return $execute();
         }
 
-        $this->inCachedExecution = true;
-
-        try {
-            $filterable = $scope->filterable;
-            $model      = $this->getModel();
-
-            $key = app(CacheKeyGenerator::class)->generate(
-                get_class($filterable),
-                $model->getTable(),
-                $scope->raw,
-                $method,
-                $args,
-            );
-
-            $tags = $filterable->getCacheTags() ?: [$model->getTable()];
-
-            return Cache::tags($tags)->remember(
-                $key,
-                $this->cacheTtl ?? $filterable->getCacheTtl(),
-                $execute,
-            );
-        } finally {
-            $this->inCachedExecution = false;
+        if (! $this->cacheEnabled && ! config('filterable.cache.enabled', false)) {
+            return $execute();
         }
+
+        $filterable = $scope->filterable;
+        $model = $this->getModel();
+
+        $key = app(CacheKeyGenerator::class)->generate(
+            get_class($filterable), $model->getTable(), $scope->raw, $method, $args,
+        );
+
+        return Cache::tags($filterable->getCacheTags() ?: [$model->getTable()])
+            ->remember($key, $this->cacheTtl ?? $filterable->getCacheTtl(), $execute);
     }
 }
