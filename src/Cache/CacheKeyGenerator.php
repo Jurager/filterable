@@ -29,11 +29,13 @@ class CacheKeyGenerator
         array $filters,
         string $method = 'get',
         array $args = [],
+        ?string $sort = null,
     ): string {
         return implode(':', [
             $this->prefix,
             md5($filterableClass . ':' . $table),
             md5(json_encode($this->deepSort($filters), JSON_THROW_ON_ERROR)),
+            $sort ?? '',
             $method,
             md5(json_encode($args, JSON_THROW_ON_ERROR)),
         ]);

@@ -9,6 +9,7 @@ use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Cache;
 use Jurager\Filterable\Cache\CacheKeyGenerator;
 use Jurager\Filterable\Scopes\PendingFilterScope;
+use Jurager\Filterable\Scopes\PendingSortScope;
 
 class FilterableBuilder extends Builder
 {
@@ -75,8 +76,11 @@ class FilterableBuilder extends Builder
         $filterable = $scope->filterable;
         $model = $this->getModel();
 
+        $sortScope = $this->scopes['_filterable_sort'] ?? null;
+
         $key = app(CacheKeyGenerator::class)->generate(
             get_class($filterable), $model->getTable(), $scope->raw, $method, $args,
+            $sortScope instanceof PendingSortScope ? $sortScope->sort : null,
         );
 
         return Cache::tags($filterable->getCacheTags() ?: [$model->getTable()])
