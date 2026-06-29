@@ -139,16 +139,17 @@ class FilterableBuilder extends Builder
 
         try {
             $filterable = $scope->filterable;
+            $model      = $this->getModel();
 
             $key = app(CacheKeyGenerator::class)->generate(
                 get_class($filterable),
-                $this->getModel()->getTable(),
+                $model->getTable(),
                 $scope->raw,
                 $method,
                 $args,
             );
 
-            $tags = $filterable->getCacheTags() ?: [$this->getModel()->getTable()];
+            $tags = $filterable->getCacheTags() ?: [$model->getTable()];
 
             return Cache::tags($tags)->remember(
                 $key,
