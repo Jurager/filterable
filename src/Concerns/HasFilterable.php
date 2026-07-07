@@ -50,6 +50,13 @@ trait HasFilterable
      */
     protected function newFilterable(): Filterable
     {
+        $class = static::class;
+
+        // Filterable-конфигурация не меняется между запросами — кешируем на уровне класса.
+        if (isset(self::$filterableInstances[$class])) {
+            return self::$filterableInstances[$class];
+        }
+
         $filterable = new Filterable(
             property_exists($this, 'filterable') ? $this->filterable : [],
             property_exists($this, 'sortable') && is_array($this->sortable) ? $this->sortable : [],
@@ -68,8 +75,10 @@ trait HasFilterable
             }
         }
 
-        return $filterable;
+        return self::$filterableInstances[$class] = $filterable;
     }
+
+    private static array $filterableInstances = [];
 
     /**
      * Apply filter[] query params to the query.
@@ -88,6 +97,10 @@ trait HasFilterable
         }
 
         $query->withGlobalScope('_filterable_filter', new PendingFilterScope($this->newFilterable(), $raw));
+
+        if (config('filterable.cache.enabled', false) && $query instanceof FilterableBuilder) {
+            $query->enableCache();
+        }
 
         return $query;
     }
@@ -131,9 +144,7 @@ trait HasFilterable
      */
     public function scopeCacheWhen(Builder $query, bool|callable $condition, ?int $ttl = null): Builder
     {
-        $should = is_callable($condition) ? $condition() : $condition;
-
-        if ($should && $query instanceof FilterableBuilder) {
+        if ((is_callable($condition) ? $condition() : $condition) && $query instanceof FilterableBuilder) {
             $query->enableCache($ttl);
         }
 

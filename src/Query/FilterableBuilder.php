@@ -2,12 +2,9 @@
 
 namespace Jurager\Filterable\Query;
 
-use Closure;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Pagination\CursorPaginator;
-use Illuminate\Pagination\Paginator;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
-use Jurager\Filterable\Cache\CacheKeyGenerator;
 use Jurager\Filterable\Scopes\PendingFilterScope;
 use Jurager\Filterable\Scopes\PendingSortScope;
 
@@ -16,74 +13,43 @@ class FilterableBuilder extends Builder
     private bool $cacheEnabled = false;
     private ?int $cacheTtl = null;
 
-    public function enableCache(?int $ttl = null): void
+    public function getFilterScope(): ?PendingFilterScope
+    {
+        return $this->scopes['_filterable_filter'] ?? null;
+    }
+
+    public function getSortScope(): ?PendingSortScope
+    {
+        return $this->scopes['_filterable_sort'] ?? null;
+    }
+
+    public function enableCache(?int $ttl = null): static
     {
         $this->cacheEnabled = true;
         $this->cacheTtl = $ttl;
+
+        return $this;
     }
 
-    public function first($columns = ['*'])
+    public function get($columns = ['*']): Collection
     {
-        return $this->cached('first', [$columns], fn () => parent::first($columns));
-    }
-
-    public function paginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null, $total = null)
-    {
-        return $this->cached(
-            'paginate',
-            $this->pageArgs($perPage, $columns, $pageName, $page),
-            fn () => parent::paginate($perPage, $columns, $pageName, $page, $total),
-        );
-    }
-
-    public function simplePaginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null)
-    {
-        return $this->cached(
-            'simplePaginate',
-            $this->pageArgs($perPage, $columns, $pageName, $page),
-            fn () => parent::simplePaginate($perPage, $columns, $pageName, $page),
-        );
-    }
-
-    public function cursorPaginate($perPage = null, $columns = ['*'], $cursorName = 'cursor', $cursor = null)
-    {
-        $resolved = (string) ($cursor ?? CursorPaginator::resolveCurrentCursor($cursorName));
-
-        return $this->cached(
-            'cursorPaginate',
-            [$perPage, $columns, $cursorName, $resolved],
-            fn () => parent::cursorPaginate($perPage, $columns, $cursorName, $cursor),
-        );
-    }
-
-    private function pageArgs($perPage, $columns, $pageName, $page): array
-    {
-        return [$perPage, $columns, $pageName, $page ?? Paginator::resolveCurrentPage($pageName)];
-    }
-
-    private function cached(string $method, array $args, Closure $execute): mixed
-    {
-        $scope = $this->scopes['_filterable_filter'] ?? null;
-
-        if (! $scope instanceof PendingFilterScope) {
-            return $execute();
+        if (!$this->cacheEnabled) {
+            return parent::get($columns);
         }
 
-        if (! $this->cacheEnabled && ! config('filterable.cache.enabled', false)) {
-            return $execute();
-        }
+        $model  = $this->getModel();
+        $config = method_exists($model, 'filterableCacheConfig') ? $model->filterableCacheConfig() : [];
+        $tags   = $config['tags'] ?? [$model->getTable()];
+        $ttl    = $this->cacheTtl ?? $config['ttl'] ?? 3600;
 
-        $filterable = $scope->filterable;
-        $model = $this->getModel();
+        $key = 'filterable:' . hash('xxh3', serialize([
+            get_class($model),
+            $this->getQuery()->toSql(),
+            $this->getQuery()->getBindings(),
+            $this->getFilterScope()?->raw,
+            $this->getSortScope()?->sort,
+        ]));
 
-        $sortScope = $this->scopes['_filterable_sort'] ?? null;
-
-        $key = app(CacheKeyGenerator::class)->generate(
-            get_class($filterable), $model->getTable(), $scope->raw, $method, $args,
-            $sortScope instanceof PendingSortScope ? $sortScope->sort : null,
-        );
-
-        return Cache::tags($filterable->getCacheTags() ?: [$model->getTable()])
-            ->remember($key, $this->cacheTtl ?? $filterable->getCacheTtl(), $execute);
+        return Cache::tags($tags)->remember($key, $ttl, fn () => parent::get($columns));
     }
 }

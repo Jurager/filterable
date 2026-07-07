@@ -30,6 +30,8 @@ class SortApplier
      */
     public function apply(Builder $query, string $sort, array $sortable, Model $model): Builder
     {
+        $query->reorder();
+
         $allowed = $this->resolveSortable($sortable);
 
         foreach (explode(',', $sort) as $segment) {

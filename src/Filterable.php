@@ -38,12 +38,6 @@ class Filterable
     protected array $sortable = [];
 
     /**
-     * Default sort applied when no sort param is present.
-     * @var string|null
-     */
-    protected ?string $defaultSort = null;
-
-    /**
      * Maximum total number of filter conditions per request.
      * @var int
      */
@@ -184,8 +178,6 @@ class Filterable
      */
     public function sort(Builder $query, ?string $sort): Builder
     {
-        $sort ??= $this->defaultSort;
-
         if (!$sort) {
             return $query;
         }
