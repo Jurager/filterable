@@ -209,9 +209,14 @@ trait HasFilterable
         }
 
         foreach ($this->newFilterable()->filterableRelations($included, $this) as $relation => $callback) {
-            $relationQuery = $this->{$relation}();
-            $callback($relationQuery);
-            $this->setRelation($relation, $relationQuery->get());
+
+            $query = $this->{$relation}();
+            $result = $callback($query);
+
+            $this->setRelation(
+                $relation,
+                $result instanceof Builder ? $result->get() : $query->get(),
+            );
         }
 
         return $this;
