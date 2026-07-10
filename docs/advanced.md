@@ -112,7 +112,7 @@ Do **not** add the field to `$sortable` — resolvers are only called for fields
 
 ## Route Model Binding
 
-`HasFilterable` overrides `resolveRouteBinding()` to call `loadFilteredRelations()` after the model is resolved. This applies the same `filter[included.*]` eager-loading that works for collection queries:
+`HasFilterable` overrides `resolveRouteBinding()` to support EAV attribute lookups and call `loadFilteredRelations()` after the model is resolved. This applies the same `filter[included.*]` eager-loading that works for collection queries:
 
 ```php
 // Route definition
@@ -124,12 +124,47 @@ GET /products/42?filter[included.prices.price_type_id][in]=1
 
 The resolved `Product` instance will have `prices` already loaded with the filter applied. See [Filtered Eager-Loading](relations.md#filtered-eager-loading-included) for the full requirements.
 
-To change the lookup field, override `resolveRouteBindingField()` on the model:
+**Changing the lookup field**
+
+To look up by a field other than the primary key, override `getRouteKeyName()` on the model:
 
 ```php
-protected function resolveRouteBindingField(mixed $value): string
+public function getRouteKeyName(): string
 {
     return 'slug';
+}
+```
+
+For models that support lookup by both primary key and an alternate field (e.g. accept either an integer ID or a slug), override `resolveRouteBinding()` directly:
+
+```php
+public function resolveRouteBinding($value, $field = null): ?static
+{
+    $field ??= ctype_digit((string) $value) ? $this->getKeyName() : 'slug';
+
+    $model = $this->where($field, $value)->first();
+    $model?->loadFilteredRelations();
+
+    return $model;
+}
+```
+
+If the alternate field is an EAV attribute (not a database column), use `whereAttribute()` instead of `where()`:
+
+```php
+public function resolveRouteBinding($value, $field = null): ?static
+{
+    $field ??= ctype_digit((string) $value) ? $this->getKeyName() : 'code';
+
+    if ($field !== $this->getKeyName() && method_exists($this, 'scopeWhereAttribute')) {
+        $model = $this->whereAttribute($field, $value)->first();
+    } else {
+        $model = parent::resolveRouteBinding($value, $field);
+    }
+
+    $model?->loadFilteredRelations();
+
+    return $model;
 }
 ```
 

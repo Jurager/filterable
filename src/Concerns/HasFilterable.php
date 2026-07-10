@@ -159,7 +159,7 @@ trait HasFilterable
      */
     public function resolveRouteBinding($value, $field = null): ?static
     {
-        $field ??= $this->resolveRouteBindingField($value);
+        $field ??= $this->getRouteKeyName();
 
         /** @var static|null $model */
         if ($field !== $this->getKeyName() && method_exists($this, 'scopeWhereAttribute')) {
@@ -171,16 +171,6 @@ trait HasFilterable
         $model?->loadFilteredRelations();
 
         return $model;
-    }
-
-    /**
-     * Determine the binding column for route model binding.
-     * @param mixed $value
-     * @return string
-     */
-    protected function resolveRouteBindingField(mixed $value): string
-    {
-        return 'id';
     }
 
     /**
