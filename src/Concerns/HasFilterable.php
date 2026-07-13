@@ -50,11 +50,8 @@ trait HasFilterable
      */
     protected function newFilterable(): Filterable
     {
-        $class = static::class;
-
-        // Filterable-конфигурация не меняется между запросами — кешируем на уровне класса.
-        if (isset(self::$filterableInstances[$class])) {
-            return self::$filterableInstances[$class];
+        if ($this->filterableInstance !== null) {
+            return $this->filterableInstance;
         }
 
         $filterable = new Filterable(
@@ -75,10 +72,10 @@ trait HasFilterable
             }
         }
 
-        return self::$filterableInstances[$class] = $filterable;
+        return $this->filterableInstance = $filterable;
     }
 
-    private static array $filterableInstances = [];
+    private ?Filterable $filterableInstance = null;
 
     /**
      * Apply filter[] query params to the query.
