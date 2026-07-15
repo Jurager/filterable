@@ -62,22 +62,9 @@ WHERE sku LIKE '%shirt%'
 ORDER BY created_at DESC
 ```
 
-## Custom Filter Logic
-
-To replace the default operator dispatch for a field, define a method with the same name on the model:
-
-```php
-protected function status(Builder $query, mixed $value): void
-{
-    $query->where('status', $value)->whereNotNull('published_at');
-}
-```
-
-Custom methods take priority over the operator dispatch for their field.
-
 ## Custom Filterable Class
 
-For complex cases — custom resolvers, reusable filter logic across models — create a class that extends `Filterable` and override `newFilterable()` on the model:
+For complex cases — custom filter methods, custom resolvers, reusable filter logic across models — create a class that extends `Filterable` and override `newFilterable()` on the model:
 
 ```php
 class ProductFilterable extends Filterable
@@ -88,6 +75,11 @@ class ProductFilterable extends Filterable
     public function __construct()
     {
         $this->addFieldResolver(new PriceRangeResolver);
+    }
+
+    protected function filterStatus(Builder $query, mixed $value): void
+    {
+        $query->where('status', $value)->whereNotNull('published_at');
     }
 }
 ```
@@ -103,5 +95,7 @@ class Product extends Model
     }
 }
 ```
+
+To replace the default operator dispatch for a field, define a `filter{Name}` method on the `Filterable` subclass, as shown above with `filterStatus`. Custom methods take priority over the operator dispatch for their field.
 
 See [Advanced](advanced.md) for details on resolvers.

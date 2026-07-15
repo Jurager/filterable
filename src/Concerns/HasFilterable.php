@@ -3,7 +3,7 @@
 namespace Jurager\Filterable\Concerns;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Jurager\Filterable\Cache\FilterableCacheObserver;
 use Jurager\Filterable\Contracts\FieldResolverInterface;
 use Jurager\Filterable\Contracts\RelationResolverInterface;
@@ -15,18 +15,36 @@ use Jurager\Filterable\Scopes\PendingSortScope;
 
 trait HasFilterable
 {
-    public static function bootHasFilterable(): void
+    /**
+     * Prefix marking a filter key as an eager-load constraint.
+     */
+    private const INCLUDED_PREFIX = 'included.';
+
+    /**
+     * Models that already have the cache observer attached.
+     * Persists across requests under Octane, preventing duplicate listeners.
+     *
+     * @var array<class-string, true>
+     */
+    private static array $filterableObserved = [];
+
+    /**
+     * Cached Filterable definition for this model instance.
+     */
+    private ?Filterable $filterableInstance = null;
+
+    protected static function bootHasFilterable(): void
     {
-        static $registered = [];
+        $class = static::class;
 
-        $modelClass = static::class;
-
-        static::whenBooted(function () use (&$registered, $modelClass): void {
-            if (isset($registered[$modelClass])) {
+        static::whenBooted(static function () use ($class): void {
+            if (isset(self::$filterableObserved[$class])) {
                 return;
             }
-            $registered[$modelClass] = true;
-            $modelClass::observe(new FilterableCacheObserver());
+
+            self::$filterableObserved[$class] = true;
+
+            $class::observe(new FilterableCacheObserver());
         });
     }
 
@@ -39,23 +57,45 @@ trait HasFilterable
         return new FilterableBuilder($query);
     }
 
+    /**
+     * @return array
+     */
     public function filterableCacheConfig(): array
     {
-        return property_exists($this, 'cache') && is_array($this->cache) ? $this->cache : [];
+        return $this->filterablePropertyArray('cache');
     }
 
     /**
+     * Read a trait-adjacent array property from the model, if defined.
+     *
+     * @param string $name
+     * @return array
+     */
+    private function filterablePropertyArray(string $name): array
+    {
+        return property_exists($this, $name) && is_array($this->{$name}) ? $this->{$name} : [];
+    }
+
+    /**
+     * Build (or reuse) the Filterable definition for this model.
+     *
      * @return Filterable
      */
     protected function newFilterable(): Filterable
     {
-        if ($this->filterableInstance !== null) {
-            return $this->filterableInstance;
-        }
+        return $this->filterableInstance ??= $this->buildFilterable();
+    }
 
+    /**
+     * Construct a Filterable instance and attach any container-tagged resolvers.
+     *
+     * @return Filterable
+     */
+    private function buildFilterable(): Filterable
+    {
         $filterable = new Filterable(
-            property_exists($this, 'filterable') ? $this->filterable : [],
-            property_exists($this, 'sortable') && is_array($this->sortable) ? $this->sortable : [],
+            $this->filterablePropertyArray('filterable'),
+            $this->filterablePropertyArray('sortable'),
             $this->filterableCacheConfig(),
         );
 
@@ -63,18 +103,18 @@ trait HasFilterable
             if ($resolver instanceof FieldResolverInterface) {
                 $filterable->addFieldResolver($resolver);
             }
+
             if ($resolver instanceof RelationResolverInterface) {
                 $filterable->addRelationResolver($resolver);
             }
+
             if ($resolver instanceof SortResolverInterface) {
                 $filterable->addSortResolver($resolver);
             }
         }
 
-        return $this->filterableInstance = $filterable;
+        return $filterable;
     }
-
-    private ?Filterable $filterableInstance = null;
 
     /**
      * Apply filter conditions to the query. Takes the parsed array directly.
@@ -85,13 +125,13 @@ trait HasFilterable
      */
     public function scopeFilter(Builder $query, array $filter): Builder
     {
-        if (empty($filter)) {
+        if (!$filter) {
             return $query;
         }
 
         $query->withGlobalScope('_filterable_filter', new PendingFilterScope($this->newFilterable(), $filter));
 
-        if (config('filterable.cache.enabled', false) && $query instanceof FilterableBuilder) {
+        if ($query instanceof FilterableBuilder && config('filterable.cache.enabled', false)) {
             $query->enableCache();
         }
 
@@ -123,7 +163,11 @@ trait HasFilterable
     {
         $keyName = $this->getKeyName();
 
-        return static::query()->whereIn($keyName, $ids)->filter($filter)->pluck($keyName)->all();
+        return $this->newQuery()
+            ->whereIn($this->qualifyColumn($keyName), $ids)
+            ->filter($filter)
+            ->pluck($keyName)
+            ->all();
     }
 
     /**
@@ -152,8 +196,8 @@ trait HasFilterable
      */
     public function scopeCacheWhen(Builder $query, bool|callable $condition, ?int $ttl = null): Builder
     {
-        if ((is_callable($condition) ? $condition() : $condition) && $query instanceof FilterableBuilder) {
-            $query->enableCache($ttl);
+        if (is_callable($condition) ? $condition() : $condition) {
+            return $this->scopeCache($query, $ttl);
         }
 
         return $query;
@@ -185,33 +229,41 @@ trait HasFilterable
      */
     public function loadIncludedRelations(array $filter): static
     {
-        if (empty($filter)) {
-            return $this;
-        }
+        $included = $this->extractIncluded($filter);
 
-        $included = [];
-
-        foreach ($filter as $key => $value) {
-            if (is_string($key) && str_starts_with($key, 'included.')) {
-                $included[substr($key, 9)] = $value;
-            }
-        }
-
-        if (empty($included)) {
+        if (!$included) {
             return $this;
         }
 
         foreach ($this->newFilterable()->filterableRelations($included, $this) as $relation => $callback) {
 
+            /** @var Relation $query */
             $query = $this->{$relation}();
-            $result = $callback($query);
 
-            $this->setRelation(
-                $relation,
-                $result instanceof Builder ? $result->get() : $query->get(),
-            );
+            $callback($query);
+
+            $this->setRelation($relation, $query->getResults());
         }
 
         return $this;
+    }
+
+    /**
+     * Pull included.* keys out of a filter array, stripping the prefix.
+     *
+     * @param array $filter
+     * @return array
+     */
+    private function extractIncluded(array $filter): array
+    {
+        $included = [];
+
+        foreach ($filter as $key => $value) {
+            if (is_string($key) && str_starts_with($key, self::INCLUDED_PREFIX)) {
+                $included[substr($key, strlen(self::INCLUDED_PREFIX))] = $value;
+            }
+        }
+
+        return $included;
     }
 }

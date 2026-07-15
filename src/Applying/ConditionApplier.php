@@ -2,39 +2,41 @@
 
 namespace Jurager\Filterable\Applying;
 
-use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Str;
-use Jurager\Filterable\Contracts\FieldResolverInterface;
-use Jurager\Filterable\Contracts\RelationResolverInterface;
+use Jurager\Filterable\Exceptions\InvalidBetweenOperandException;
+use Jurager\Filterable\Exceptions\OperatorNotAllowedException;
+use Jurager\Filterable\Exceptions\TooManyValuesException;
 use Jurager\Filterable\Support\FilterOperator;
 use Jurager\Filterable\Support\ParsedFilters;
+use Throwable;
 
-/**
- * Applies parsed filter conditions to an eloquent query builder.
- */
 class ConditionApplier
 {
     /**
-     * @param int $maxInValues Maximum values allowed in a single in/nin filter.
-     * @param FieldResolverInterface[] $fieldResolvers
-     * @param RelationResolverInterface[] $relationResolvers
-     * @param Closure|null $subclassHook Signature: (Builder, string $name, mixed $value): bool
+     * Matches a single unqualified identifier.
      */
+    private const string IDENTIFIER = '/^\w+$/';
+
+    /**
+     * Matches an optionally dot-qualified identifier.
+     */
+    private const string QUALIFIED_IDENTIFIER = '/^\w+(\.\w+)*$/';
+
     public function __construct(
         private readonly int $maxInValues = 500,
         private readonly array $fieldResolvers = [],
         private readonly array $relationResolvers = [],
-        private readonly ?Closure $subclassHook = null,
     ) {
     }
 
     /**
      * Apply all parsed filter conditions to the query builder.
+     *
      * @param Builder $query
      * @param ParsedFilters $parsed
      * @param Model $model
@@ -54,14 +56,19 @@ class ConditionApplier
         }
 
         foreach ($parsed->andGroups as $group) {
+
             $query->where(function (Builder $q) use ($group, $parsed, $model): void {
+
                 $first = true;
+
                 foreach ($group as $name => $value) {
                     if ($value === null) {
                         continue;
                     }
+
                     $method = $first ? 'where' : 'orWhere';
                     $first  = false;
+
                     $q->{$method}(fn (Builder $sub) => $this->applySingleFilter($sub, (string) $name, $value, $parsed->allowed, $model));
                 }
             });
@@ -69,7 +76,8 @@ class ConditionApplier
     }
 
     /**
-     * Apply a flat set of field → value filters to the query.
+     * Apply a flat set of field and value filters to the query.
+     *
      * @param Builder $query
      * @param array $filters
      * @param array $allowed
@@ -87,7 +95,7 @@ class ConditionApplier
 
     /**
      * Route a single filter to the appropriate handler.
-     * Priority: unknown fields → subclass hook → resolvers → relation → boolean → tree → operators.
+     *
      * @param Builder $query
      * @param string $name
      * @param mixed $value
@@ -98,35 +106,28 @@ class ConditionApplier
     private function applySingleFilter(Builder $query, string $name, mixed $value, array $allowed, Model $model): void
     {
         if (!isset($allowed[$name])) {
-            str_contains($name, '.')
-                ? $this->delegateRelationField($query, $name, $value, $model)
-                : $this->delegatePlainField($query, $name, $value, $model);
+            $this->delegate($query, $name, $value, $model);
 
             return;
         }
 
-        $config = $allowed[$name];
+        $config    = $allowed[$name];
+        $operators = $this->operatorsFor($config);
 
         if (str_contains($name, '.')) {
-            $this->applyRelationFilter($query, $name, $config, $value, $model);
+            $this->applyRelationFilter($query, $name, $operators, $value, $model);
 
             return;
         }
 
-        if ($config === 'boolean' || in_array($model->getCasts()[$name] ?? '', ['bool', 'boolean'], true)) {
-            $raw  = is_array($value) ? ($value['eq'] ?? null) : $value;
-            $cast = $raw !== null ? filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) : null;
-            if ($cast !== null) {
-                $query->where($name, $cast);
-            }
+        if ($this->isBooleanField($name, $config, $model)) {
+            $this->applyBooleanFilter($query, $name, $value);
 
             return;
         }
 
-        $operators = is_array($config) ? $config : ['eq'];
-
-        if (in_array('tree', $operators, true) && is_array($value) && array_key_exists('tree', $value)) {
-            $this->applyDirectTreeFilter($query, $value['tree']);
+        if ($this->isTreeRequest($operators, $value)) {
+            $this->applyDirectTreeFilter($query, $value['tree'], $model);
 
             return;
         }
@@ -135,65 +136,111 @@ class ConditionApplier
     }
 
     /**
-     * Delegate an unknown plain field to the subclass hook, then field resolvers.
+     * Delegate an unrecognized field to the registered resolvers, in order.
+     *
      * @param Builder $query
      * @param string $name
      * @param mixed $value
      * @param Model $model
      * @return void
      */
-    private function delegatePlainField(Builder $query, string $name, mixed $value, Model $model): void
+    private function delegate(Builder $query, string $name, mixed $value, Model $model): void
     {
-        if ($this->subclassHook !== null && ($this->subclassHook)($query, $name, $value)) {
+        if (str_contains($name, '.')) {
+
+            if (array_any($this->relationResolvers, fn($resolver) => $resolver->resolveRelation($query, $name, $value, $model))) {
+                return;
+            }
+
             return;
         }
 
-        foreach ($this->fieldResolvers as $resolver) {
-            if ($resolver->resolve($query, $name, $value, $model)) {
-                return;
-            }
+        if (array_any($this->fieldResolvers, fn($resolver) => $resolver->resolve($query, $name, $value, $model))) {
+            return;
         }
     }
 
     /**
-     * Delegate an unknown dotted field to relation resolvers.
+     * Normalize a field config into a list of allowed operators.
+     *
+     * @param array|string $config
+     * @return array
+     */
+    private function operatorsFor(array|string $config): array
+    {
+        return is_array($config) ? $config : ['eq'];
+    }
+
+    /**
+     * Determine whether a field should be treated as a boolean.
+     *
+     * @param string $name
+     * @param array|string $config
+     * @param Model $model
+     * @return bool
+     */
+    private function isBooleanField(string $name, array|string $config, Model $model): bool
+    {
+        return $config === 'boolean' || in_array($model->getCasts()[$name] ?? '', ['bool', 'boolean'], true);
+    }
+
+    /**
+     * Determine whether the value is a tree request and the field permits it.
+     *
+     * @param array $operators
+     * @param mixed $value
+     * @return bool
+     */
+    private function isTreeRequest(array $operators, mixed $value): bool
+    {
+        return is_array($value) && array_key_exists('tree', $value) && in_array('tree', $operators, true);
+    }
+
+    /**
+     * Apply a boolean equality filter, ignoring values that are not coercible.
+     *
      * @param Builder $query
      * @param string $name
      * @param mixed $value
-     * @param Model $model
      * @return void
      */
-    private function delegateRelationField(Builder $query, string $name, mixed $value, Model $model): void
+    private function applyBooleanFilter(Builder $query, string $name, mixed $value): void
     {
-        foreach ($this->relationResolvers as $resolver) {
-            if ($resolver->resolveRelation($query, $name, $value, $model)) {
-                return;
-            }
+        $raw = is_array($value) ? ($value['eq'] ?? null) : $value;
+
+        if ($raw === null || is_array($raw)) {
+            return;
+        }
+
+        $cast = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        if ($cast !== null) {
+            $query->where($name, $cast);
         }
     }
 
     /**
      * Apply a dotted-name filter through whereHas or a pivot subquery.
+     *
      * @param Builder $query
      * @param string $name
-     * @param array|string $config
+     * @param array $operators
      * @param mixed $value
      * @param Model $model
      * @return void
      */
-    private function applyRelationFilter(Builder $query, string $name, array|string $config, mixed $value, Model $model): void
+    private function applyRelationFilter(Builder $query, string $name, array $operators, mixed $value, Model $model): void
     {
-        $parts        = explode('.', $name);
-        $column       = array_pop($parts);
-        $relationName = $parts[0];
+        $parts  = explode('.', $name);
+        $column = array_pop($parts);
 
-        if (!preg_match('/^\w+$/', $relationName)) {
+        if (array_any($parts, fn($part) => !preg_match(self::IDENTIFIER, $part))) {
             return;
         }
 
-        $operators = is_array($config) ? $config : ['eq'];
+        $relationName = $parts[0];
 
-        if (is_array($value) && array_key_exists('tree', $value) && in_array('tree', $operators, true)) {
+        if ($this->isTreeRequest($operators, $value)) {
             $this->applyTreeFilter($query, $relationName, $value['tree']);
 
             return;
@@ -201,16 +248,15 @@ class ConditionApplier
 
         $pivotRelation = $this->resolvePivotRelation($model, $relationName);
 
-        if (count($parts) > 1 && $parts[1] === 'pivot') {
-            $this->applyPivotFilter($query, $column, $operators, $value, $pivotRelation);
+        $isPivot = $pivotRelation && (
+                (count($parts) > 1 && $parts[1] === 'pivot')
+                || in_array($column, [
+                    $pivotRelation->getForeignPivotKeyName(),
+                    $pivotRelation->getRelatedPivotKeyName(),
+                ], true)
+            );
 
-            return;
-        }
-
-        if ($pivotRelation && in_array($column, [
-            $pivotRelation->getForeignPivotKeyName(),
-            $pivotRelation->getRelatedPivotKeyName(),
-        ], true)) {
+        if ($isPivot) {
             $this->applyPivotFilter($query, $column, $operators, $value, $pivotRelation);
 
             return;
@@ -223,15 +269,17 @@ class ConditionApplier
 
     /**
      * Apply a tree filter directly on the model (no relation).
+     *
      * @param Builder $query
      * @param mixed $value
+     * @param Model $model
      * @return void
      */
-    private function applyDirectTreeFilter(Builder $query, mixed $value): void
+    private function applyDirectTreeFilter(Builder $query, mixed $value, Model $model): void
     {
         $ids = $this->parseIds($value);
 
-        if (empty($ids) || !method_exists($query, 'whereDescendantOrSelf')) {
+        if (!$ids || !$this->supportsTree($model)) {
             return;
         }
 
@@ -240,6 +288,7 @@ class ConditionApplier
 
     /**
      * Apply a tree filter through a named relation.
+     *
      * @param Builder $query
      * @param string $relation
      * @param mixed $value
@@ -249,7 +298,7 @@ class ConditionApplier
     {
         $ids = $this->parseIds(is_array($value) && isset($value['in']) ? $value['in'] : $value);
 
-        if (empty($ids)) {
+        if (!$ids) {
             return;
         }
 
@@ -257,7 +306,19 @@ class ConditionApplier
     }
 
     /**
+     * Determine whether the model's builder exposes nested-set tree scopes.
+     *
+     * @param Model $model
+     * @return bool
+     */
+    private function supportsTree(Model $model): bool
+    {
+        return method_exists($model, 'whereDescendantOrSelf') || method_exists($model, 'scopeWhereDescendantOrSelf') || Builder::hasGlobalMacro('whereDescendantOrSelf');
+    }
+
+    /**
      * Constrain a query to descendants of the given node IDs.
+     *
      * @param Builder $query
      * @param array $ids
      * @return void
@@ -273,24 +334,16 @@ class ConditionApplier
 
     /**
      * Apply a filter condition through a pivot table subquery.
+     *
      * @param Builder $query
      * @param string $column
      * @param array $operators
      * @param mixed $value
-     * @param BelongsToMany|MorphToMany|null $rel
+     * @param BelongsToMany $rel
      * @return void
      */
-    private function applyPivotFilter(
-        Builder $query,
-        string $column,
-        array $operators,
-        mixed $value,
-        BelongsToMany|MorphToMany|null $rel,
-    ): void {
-        if (!$rel) {
-            return;
-        }
-
+    private function applyPivotFilter(Builder $query, string $column, array $operators, mixed $value, BelongsToMany $rel): void
+    {
         $table           = $rel->getTable();
         $parentTable     = $rel->getParent()->getTable();
         $qualifiedColumn = "$table.$column";
@@ -310,23 +363,29 @@ class ConditionApplier
 
     /**
      * Resolve a BelongsToMany or MorphToMany relation by name, or return null.
+     *
      * @param Model $model
      * @param string $name
-     * @return BelongsToMany|MorphToMany|null
+     * @return BelongsToMany|null
      */
-    private function resolvePivotRelation(Model $model, string $name): BelongsToMany|MorphToMany|null
+    private function resolvePivotRelation(Model $model, string $name): ?BelongsToMany
     {
-        if (!method_exists($model, $name)) {
+        if (!$model->isRelation($name)) {
             return null;
         }
 
-        $rel = $model->{$name}();
+        try {
+            $rel = $model->{$name}();
+        } catch (Throwable) {
+            return null;
+        }
 
         return $rel instanceof BelongsToMany ? $rel : null;
     }
 
     /**
      * Dispatch operator-keyed filter values to the corresponding query constraints.
+     *
      * @param Builder|QueryBuilder $query
      * @param string $column
      * @param array $allowed
@@ -335,7 +394,7 @@ class ConditionApplier
      */
     private function applyOperators(Builder|QueryBuilder $query, string $column, array $allowed, mixed $value): void
     {
-        if (!preg_match('/^\w+(\.\w+)*$/', $column)) {
+        if (!preg_match(self::QUALIFIED_IDENTIFIER, $column)) {
             return;
         }
 
@@ -347,23 +406,24 @@ class ConditionApplier
             return;
         }
 
-        $toList = fn ($v) => $this->sanitizeList(is_array($v) ? $v : explode(',', (string) $v));
-
         foreach ($value as $alias => $operand) {
+
             $op = FilterOperator::fromAlias((string) $alias);
 
-            abort_unless($op !== null && in_array($op->value, $allowed, true), 400, "Filter operator '$alias' is not allowed for this field.");
+            if ($op === null || !in_array($op->value, $allowed, true)) {
+                throw new OperatorNotAllowedException((string) $alias);
+            }
 
             match ($op) {
                 FilterOperator::Eq         => $this->applyScalarCondition($query, $column, '=', $operand),
                 FilterOperator::Ne         => $this->applyScalarCondition($query, $column, '!=', $operand),
-                FilterOperator::Gt         => $query->where($column, '>', $operand),
-                FilterOperator::Gte        => $query->where($column, '>=', $operand),
-                FilterOperator::Lt         => $query->where($column, '<', $operand),
-                FilterOperator::Lte        => $query->where($column, '<=', $operand),
+                FilterOperator::Gt         => $this->applyComparison($query, $column, '>', $operand),
+                FilterOperator::Gte        => $this->applyComparison($query, $column, '>=', $operand),
+                FilterOperator::Lt         => $this->applyComparison($query, $column, '<', $operand),
+                FilterOperator::Lte        => $this->applyComparison($query, $column, '<=', $operand),
                 FilterOperator::Like       => $this->applyLike($query, $column, $operand),
-                FilterOperator::In         => $query->whereIn($column, $toList($operand)),
-                FilterOperator::Nin        => $query->whereNotIn($column, $toList($operand)),
+                FilterOperator::In         => $query->whereIn($column, $this->toList($operand)),
+                FilterOperator::Nin        => $query->whereNotIn($column, $this->toList($operand)),
                 FilterOperator::IsNull     => $query->whereNull($column),
                 FilterOperator::IsNotNull  => $query->whereNotNull($column),
                 FilterOperator::Between    => $this->applyBetween($query, $column, $operand, false),
@@ -374,7 +434,24 @@ class ConditionApplier
     }
 
     /**
+     * Apply a scalar comparison, ignoring non-scalar operands.
+     *
+     * @param Builder|QueryBuilder $query
+     * @param string $column
+     * @param string $sqlOp
+     * @param mixed $operand
+     * @return void
+     */
+    private function applyComparison(Builder|QueryBuilder $query, string $column, string $sqlOp, mixed $operand): void
+    {
+        if (is_scalar($operand)) {
+            $query->where($column, $sqlOp, $operand);
+        }
+    }
+
+    /**
      * Apply a scalar equality/inequality condition, handling null coercion.
+     *
      * @param Builder|QueryBuilder $query
      * @param string $column
      * @param string $sqlOp
@@ -389,12 +466,15 @@ class ConditionApplier
             return;
         }
 
-        $query->where($column, $sqlOp, $value);
+        if (is_scalar($value)) {
+            $query->where($column, $sqlOp, $value);
+        }
     }
 
     /**
      * Apply a LIKE filter, supporting multiple values as OR conditions.
      * Uses ILIKE with ICU collation on PostgreSQL for Unicode-aware matching.
+     *
      * @param Builder|QueryBuilder $query
      * @param string $column
      * @param mixed $value
@@ -408,7 +488,7 @@ class ConditionApplier
             default           => [],
         };
 
-        if (empty($values)) {
+        if (!$values) {
             return;
         }
 
@@ -418,17 +498,18 @@ class ConditionApplier
             return;
         }
 
-        $query->where(function (Builder $sub) use ($column, $values): void {
+        $query->where(function (Builder|QueryBuilder $sub) use ($column, $values): void {
             foreach ($values as $i => $val) {
                 $i === 0
                     ? $this->applyLikeCondition($sub, $column, $val)
-                    : $sub->orWhere(fn ($q) => $this->applyLikeCondition($q, $column, $val));
+                    : $sub->orWhere(fn (Builder|QueryBuilder $q) => $this->applyLikeCondition($q, $column, $val));
             }
         });
     }
 
     /**
      * Apply a single LIKE condition to the query.
+     *
      * @param Builder|QueryBuilder $query
      * @param string $column
      * @param string $value
@@ -436,21 +517,24 @@ class ConditionApplier
      */
     private function applyLikeCondition(Builder|QueryBuilder $query, string $column, string $value): void
     {
-        if ($query->getConnection()->getDriverName() === 'pgsql') {
+        $connection = $query->getConnection();
 
-            $grammar = $query->getConnection()->getQueryGrammar();
+        if ($connection->getDriverName() === 'pgsql') {
 
             // Unicode-aware case folding
-            $query->whereRaw($grammar->wrap($column).' COLLATE "und-x-icu" ILIKE ?', ['%'.$value.'%']);
+            $wrapped = $connection->getQueryGrammar()->wrap($column);
+
+            $query->whereRaw("$wrapped COLLATE \"und-x-icu\" ILIKE ?", ['%'.$value.'%']);
 
             return;
         }
 
-        $query->whereLike($column, $value);
+        $query->whereLike($column, "%$value%");
     }
 
     /**
      * Apply a BETWEEN or NOT BETWEEN condition. Aborts with 400 if operand is not exactly 2 values.
+     *
      * @param Builder|QueryBuilder $query
      * @param string $column
      * @param mixed $operand
@@ -463,7 +547,11 @@ class ConditionApplier
             $operand = Str::of($operand)->explode(',')->map(trim(...))->all();
         }
 
-        abort_if(count($operand) !== 2, 400, 'Operator \''.($not ? 'not_between' : 'between').'\' requires exactly 2 values.');
+        $operand = array_values($operand);
+
+        if (count($operand) !== 2) {
+            throw new InvalidBetweenOperandException($not ? 'not_between' : 'between');
+        }
 
         $not
             ? $query->whereNotBetween($column, $operand)
@@ -471,7 +559,19 @@ class ConditionApplier
     }
 
     /**
-     * Strip empty values from a list and abort if it exceeds maxInValues.
+     * Normalize an operand into a sanitized list of values.
+     *
+     * @param mixed $operand
+     * @return array
+     */
+    private function toList(mixed $operand): array
+    {
+        return $this->sanitizeList(is_array($operand) ? $operand : explode(',', (string) $operand));
+    }
+
+    /**
+     * Strip empty values from a list and abort if it exceeds max values.
+     *
      * @param array $values
      * @return array
      */
@@ -479,23 +579,31 @@ class ConditionApplier
     {
         $list = array_values(array_filter($values, static fn ($v) => $v !== '' && $v !== null));
 
-        abort_if(count($list) > $this->maxInValues, 400, "Filter list exceeds maximum of $this->maxInValues values.");
+        if (count($list) > $this->maxInValues) {
+            throw new TooManyValuesException($this->maxInValues);
+        }
 
         return $list;
     }
 
     /**
      * Parse a value into a list of positive integer IDs.
+     *
      * @param mixed $value
      * @return array
      */
     private function parseIds(mixed $value): array
     {
-        $raw = is_array($value) ? $value : explode(',', (string) $value);
         $ids = [];
+        $raw = is_array($value) ? $value : explode(',', (string) $value);
 
         foreach ($raw as $v) {
+            if (!is_scalar($v)) {
+                continue;
+            }
+
             $id = (int) trim((string) $v);
+
             if ($id > 0) {
                 $ids[] = $id;
             }

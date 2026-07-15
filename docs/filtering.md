@@ -51,12 +51,12 @@ A request may only use the operators declared for that field. Any other operator
 
 ## Custom Filter Methods
 
-Define a method with the same name as the filter field on a [custom Filterable subclass](advanced.md#custom-filterable-class) to replace the default operator dispatch for unknown fields:
+Define a `filter{Name}` method on a [custom Filterable subclass](advanced.md#custom-filterable-class) to replace the default operator dispatch for unknown fields:
 
 ```php
 class ProductFilterable extends Filterable
 {
-    protected function status(Builder $query, mixed $value): void
+    protected function filterStatus(Builder $query, mixed $value): void
     {
         match ($value) {
             'published' => $query->whereNotNull('published_at'),
@@ -67,7 +67,7 @@ class ProductFilterable extends Filterable
 }
 ```
 
-The method is called when `filter[status]=…` is present and `status` is not declared in `$filterable`. Methods defined on the `Filterable` base class itself are never treated as filter handlers.
+The method is called when `filter[status]=…` is present and `status` is not declared in `$filterable`. The field name is studly-cased and prefixed with `filter` (`status` → `filterStatus`, `published_at` → `filterPublishedAt`).
 
 ## OR Groups
 

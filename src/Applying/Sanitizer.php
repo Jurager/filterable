@@ -2,28 +2,47 @@
 
 namespace Jurager\Filterable\Applying;
 
-/**
- * Applies field-level sanitizers to filter values.
- */
 class Sanitizer
 {
     /**
-     * @param array $sanitizers Field → handler map. Handler is a callable, function name, or array of both.
+     * Normalized sanitizers
+     *
+     * @var array<string, list<callable>>
      */
-    public function __construct(private readonly array $sanitizers)
+    private readonly array $sanitizers;
+
+    public function __construct(array $sanitizers)
     {
+        $normalized = [];
+
+        foreach ($sanitizers as $field => $handler) {
+            $handlers = [];
+
+            foreach (is_array($handler) ? $handler : [$handler] as $item) {
+                if (is_callable($item)) {
+                    $handlers[] = $item;
+                }
+            }
+
+            if ($handlers) {
+                $normalized[$field] = $handlers;
+            }
+        }
+
+        $this->sanitizers = $normalized;
     }
 
     /**
      * Apply sanitizers to a flat filter array.
+     *
      * @param array $filters
      * @return array
      */
     public function apply(array $filters): array
     {
-        foreach ($this->sanitizers as $field => $handler) {
-            if (isset($filters[$field])) {
-                $filters[$field] = $this->sanitizeValue($filters[$field], $handler);
+        foreach ($filters as $field => $value) {
+            if ($handlers = $this->sanitizers[$field] ?? null) {
+                $filters[$field] = $this->sanitizeValue($value, $handlers);
             }
         }
 
@@ -32,6 +51,7 @@ class Sanitizer
 
     /**
      * Apply sanitizers to each group in a groups array.
+     *
      * @param array $groups
      * @return array
      */
@@ -42,34 +62,27 @@ class Sanitizer
 
     /**
      * Sanitize a single filter value through one or more handlers.
+     *
      * @param mixed $value
-     * @param mixed $handler
+     * @param list<callable> $handlers
      * @return mixed
      */
-    private function sanitizeValue(mixed $value, mixed $handler): mixed
+    private function sanitizeValue(mixed $value, array $handlers): mixed
     {
-        $handlers = is_array($handler) ? $handler : [$handler];
-
-        $apply = function (string $v) use ($handlers): string {
-            foreach ($handlers as $h) {
-                $result = is_callable($h)
-                    ? $h($v)
-                    : (is_string($h) && function_exists($h) ? $h($v) : $v);
-
-                if (is_string($result) || is_numeric($result)) {
-                    $v = (string) $result;
-                }
-            }
-
-            return $v;
-        };
-
-        if (is_string($value)) {
-            return $apply($value);
+        if (is_array($value)) {
+            return array_map(fn ($v) => $this->sanitizeValue($v, $handlers), $value);
         }
 
-        if (is_array($value)) {
-            return array_map(static fn ($v) => is_string($v) ? $apply($v) : $v, $value);
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        foreach ($handlers as $handler) {
+            $result = $handler($value);
+
+            if (is_string($result) || is_numeric($result)) {
+                $value = (string) $result;
+            }
         }
 
         return $value;
