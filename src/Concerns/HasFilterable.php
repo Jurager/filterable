@@ -170,16 +170,11 @@ trait HasFilterable
     {
         $field ??= $this->getRouteKeyName();
 
-        /** @var static|null $model */
         if ($field !== $this->getKeyName() && method_exists($this, 'scopeWhereAttribute')) {
-            $model = $this->whereAttribute($field, $value)->first();
-        } else {
-            $model = parent::resolveRouteBinding($value, $field);
+            return $this->whereAttribute($field, $value)->first();
         }
 
-        $model?->loadIncludedRelations(request()->query('filter') ?? []);
-
-        return $model;
+        return parent::resolveRouteBinding($value, $field);
     }
 
     /**
