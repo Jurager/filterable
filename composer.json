@@ -22,7 +22,7 @@
     },
     "suggest": {
         "jurager/eav": "Provides entity-attribute-value attribute filtering",
-        "aimeos/laravel-nestedset": "Required for tree (descendants) filtering"
+        "aimeos/laravel-nestedset": "Required for descendants filtering"
     },
     "autoload": {
         "psr-4": {

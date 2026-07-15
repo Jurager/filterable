@@ -15,8 +15,7 @@ use Jurager\Filterable\Support\FilterOperator;
 use Jurager\Filterable\Support\ParsedFilters;
 
 /**
- * Applies parsed filter conditions to an Eloquent query builder.
- * Stateless, constructed per-apply. Unknown fields are delegated to the subclass hook, then resolvers.
+ * Applies parsed filter conditions to an eloquent query builder.
  */
 class ConditionApplier
 {

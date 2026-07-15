@@ -12,7 +12,8 @@ class PendingFilterScope implements Scope
     public function __construct(
         public readonly Filterable $filterable,
         public readonly array $raw,
-    ) {}
+    ) {
+    }
 
     public function apply(Builder $query, Model $model): void
     {

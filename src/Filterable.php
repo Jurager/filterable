@@ -19,7 +19,6 @@ use ReflectionMethod;
 
 /**
  * Base class for model-scoped filter definitions.
- * Subclass per model and declare $filterable, $sortable, and custom filter methods.
  */
 class Filterable
 {

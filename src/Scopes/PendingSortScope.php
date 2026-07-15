@@ -12,7 +12,8 @@ class PendingSortScope implements Scope
     public function __construct(
         public readonly Filterable $filterable,
         public readonly ?string $sort,
-    ) {}
+    ) {
+    }
 
     public function apply(Builder $query, Model $model): void
     {
