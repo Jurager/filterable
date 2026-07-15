@@ -3,7 +3,6 @@
 namespace Jurager\Filterable\Concerns;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\Model;
 use Jurager\Filterable\Cache\FilterableCacheObserver;
 use Jurager\Filterable\Contracts\FieldResolverInterface;
@@ -78,22 +77,19 @@ trait HasFilterable
     private ?Filterable $filterableInstance = null;
 
     /**
-     * Apply filter[] query params to the query.
+     * Apply filter conditions to the query. Takes the parsed array directly.
+     *
      * @param Builder $query
-     * @param Request|array|null $request
+     * @param array $filter
      * @return Builder
      */
-    public function scopeFilter(Builder $query, Request|array|null $request = null): Builder
+    public function scopeFilter(Builder $query, array $filter): Builder
     {
-        $raw = is_array($request) ? $request : (($request ?? request())->query('filter') ?? []);
-
-        abort_if(is_string($raw), 400, 'The filter parameter must be an array.');
-
-        if (!is_array($raw) || empty($raw)) {
+        if (empty($filter)) {
             return $query;
         }
 
-        $query->withGlobalScope('_filterable_filter', new PendingFilterScope($this->newFilterable(), $raw));
+        $query->withGlobalScope('_filterable_filter', new PendingFilterScope($this->newFilterable(), $filter));
 
         if (config('filterable.cache.enabled', false) && $query instanceof FilterableBuilder) {
             $query->enableCache();
@@ -103,22 +99,36 @@ trait HasFilterable
     }
 
     /**
-     * Apply sort query param to the query.
+     * Apply a sort spec to the query.
+     *
      * @param Builder $query
-     * @param Request|null $request
+     * @param string|null $sort
      * @return Builder
      */
-    public function scopeSort(Builder $query, Request|null $request = null): Builder
+    public function scopeSort(Builder $query, ?string $sort): Builder
     {
-        $sort = ($request ?? request())->query('sort');
-
-        $query->withGlobalScope('_filterable_sort', new PendingSortScope($this->newFilterable(), is_string($sort) ? $sort : null));
+        $query->withGlobalScope('_filterable_sort', new PendingSortScope($this->newFilterable(), $sort));
 
         return $query;
     }
 
     /**
+     * Narrow a list of primary keys down to those matching filter conditions.
+     *
+     * @param array $ids
+     * @param array $filter
+     * @return array
+     */
+    public function narrow(array $ids, array $filter): array
+    {
+        $keyName = $this->getKeyName();
+
+        return static::query()->whereIn($keyName, $ids)->filter($filter)->pluck($keyName)->all();
+    }
+
+    /**
      * Enable cache for the current filter query.
+     *
      * @param Builder $query
      * @param int|null $ttl
      * @return Builder
@@ -134,6 +144,7 @@ trait HasFilterable
 
     /**
      * Conditionally enable cache for the current filter query.
+     *
      * @param Builder $query
      * @param bool|callable $condition
      * @param int|null $ttl
@@ -150,6 +161,7 @@ trait HasFilterable
 
     /**
      * Resolve route model binding with EAV attribute support and relation loading.
+     *
      * @param mixed $value
      * @param string|null $field
      * @return static|null
@@ -165,27 +177,26 @@ trait HasFilterable
             $model = parent::resolveRouteBinding($value, $field);
         }
 
-        $model?->loadFilteredRelations();
+        $model?->loadIncludedRelations(request()->query('filter') ?? []);
 
         return $model;
     }
 
     /**
-     * Eager-load filterable relations scoped to filter[included.*] params.
-     * @param Request|array|null $request
+     * Eager-load relations scoped by included conditions.
+     *
+     * @param array $filter
      * @return static
      */
-    public function loadFilteredRelations(Request|array|null $request = null): static
+    public function loadIncludedRelations(array $filter): static
     {
-        $raw = is_array($request) ? $request : (($request ?? request())->query('filter') ?? []);
-
-        if (!is_array($raw) || empty($raw)) {
+        if (empty($filter)) {
             return $this;
         }
 
         $included = [];
 
-        foreach ($raw as $key => $value) {
+        foreach ($filter as $key => $value) {
             if (is_string($key) && str_starts_with($key, 'included.')) {
                 $included[substr($key, 9)] = $value;
             }
