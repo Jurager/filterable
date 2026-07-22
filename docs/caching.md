@@ -52,12 +52,12 @@ Enable or disable caching for a single query:
 
 ```php
 // explicit
-Product::query()->filter()->cache()->paginate();
-Product::query()->filter()->cache(ttl: 300)->paginate();
+Product::query()->filter($filter)->cache()->paginate();
+Product::query()->filter($filter)->cache(ttl: 300)->paginate();
 
 // conditional
-Product::query()->filter()->cacheWhen(auth()->user()->prefersCaching())->paginate();
-Product::query()->filter()->cacheWhen(fn () => Cache::has('warm'))->paginate();
+Product::query()->filter($filter)->cacheWhen(auth()->user()->prefersCaching())->paginate();
+Product::query()->filter($filter)->cacheWhen(fn () => Cache::has('warm'))->paginate();
 ```
 
 ## Cached Methods

@@ -1,10 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Cache;
 
+use BadMethodCallException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
+/** Flush model cache tags to prevent stale filter results. */
 class FilterableCacheObserver
 {
     public function saved(Model $model): void
@@ -27,19 +31,10 @@ class FilterableCacheObserver
         $this->invalidate($model);
     }
 
+    /** Invalidate the cache tags associated with the model. */
     protected function invalidate(Model $model): void
     {
-        if (!method_exists($model, 'filterableCacheConfig')) {
-            return;
-        }
-
-        $config = $model->filterableCacheConfig();
-
-        if (empty($config)) {
-            return;
-        }
-
-        $tags = $config['tags'] ?? [$model->getTable()];
+        $tags = CacheConfig::for($model)['tags'] ?? [$model->getTable()];
 
         if (empty($tags)) {
             return;
@@ -47,8 +42,8 @@ class FilterableCacheObserver
 
         try {
             Cache::tags($tags)->flush();
-        } catch (\BadMethodCallException) {
-            // Driver does not support tags — skip silently.
+        } catch (BadMethodCallException) {
+            // Ignore drivers that do not support tags
         }
     }
 }

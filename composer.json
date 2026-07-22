@@ -24,6 +24,10 @@
         "jurager/eav": "Provides entity-attribute-value attribute filtering",
         "aimeos/laravel-nestedset": "Required for descendants filtering"
     },
+    "scripts": {
+        "test": "phpunit",
+        "format": "pint"
+    },
     "autoload": {
         "psr-4": {
             "Jurager\\Filterable\\": "src/"

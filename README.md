@@ -54,7 +54,10 @@ class Product extends Model
 Apply in the controller:
 
 ```php
-Product::query()->filter()->sort()->paginate();
+Product::query()
+    ->filter(request()->query('filter', []))
+    ->sort(request()->query('sort'))
+    ->paginate();
 ```
 
 Request:

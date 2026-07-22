@@ -31,18 +31,18 @@ Fields listed without an operator array (`'is_active'`) default to `['eq']`.
 ## Applying Filters in a Controller
 
 ```php
-public function index(): JsonResponse
+public function index(Request $request): JsonResponse
 {
     $products = Product::query()
-        ->filter()
-        ->sort()
+        ->filter($request->query('filter', []))
+        ->sort($request->query('sort'))
         ->paginate();
 
     return response()->json($products);
 }
 ```
 
-`->filter()` reads `filter[]` from the current request. `->sort()` reads the `sort` parameter. Both accept an explicit `Request` or a raw array:
+`->filter()` takes the raw `filter[]` array and `->sort()` takes the raw `sort` string — both explicitly, there is no implicit request reading. Pull them from the current request yourself, or pass a literal array:
 
 ```php
 Product::query()->filter(['sku' => ['like' => 'shirt']])->paginate();

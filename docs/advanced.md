@@ -35,14 +35,14 @@ class Product extends Model
 
 ## Custom Field Resolvers
 
-A field resolver intercepts plain filter keys that are **not declared in `$filterable`**. Implement `FieldResolverInterface` — return `true` if the filter was handled, `false` to pass to the next resolver:
+A field resolver intercepts plain filter keys that are **not declared in `$filterable`**. Implement `FieldResolver` — return `true` if the filter was handled, `false` to pass to the next resolver:
 
 ```php
-use Jurager\Filterable\Contracts\FieldResolverInterface;
+use Jurager\Filterable\Contracts\FieldResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class PriceRangeResolver implements FieldResolverInterface
+class PriceRangeResolver implements FieldResolver
 {
     public function resolve(Builder $query, string $name, mixed $value, Model $model): bool
     {
@@ -62,14 +62,14 @@ Register via `addFieldResolver()` in the Filterable subclass constructor (see ab
 
 ## Custom Relation Resolvers
 
-A relation resolver intercepts dotted filter keys (`relation.column`) that are **not declared in `$filterable`**. Implement `RelationResolverInterface` — return `true` if handled, `false` to pass to the next resolver:
+A relation resolver intercepts dotted filter keys (`relation.column`) that are **not declared in `$filterable`**. Implement `RelationResolver` — return `true` if handled, `false` to pass to the next resolver:
 
 ```php
-use Jurager\Filterable\Contracts\RelationResolverInterface;
+use Jurager\Filterable\Contracts\RelationResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class ActiveTagsResolver implements RelationResolverInterface
+class ActiveTagsResolver implements RelationResolver
 {
     public function resolveRelation(Builder $query, string $name, mixed $value, Model $model): bool
     {
@@ -86,14 +86,14 @@ class ActiveTagsResolver implements RelationResolverInterface
 
 ## Custom Sort Resolvers
 
-For sort fields that require custom SQL — joined columns, expressions, or relations — implement `SortResolverInterface`. Return `true` if the sort was applied, `false` to pass to the next resolver:
+For sort fields that require custom SQL — joined columns, expressions, or relations — implement `SortResolver`. Return `true` if the sort was applied, `false` to pass to the next resolver:
 
 ```php
-use Jurager\Filterable\Contracts\SortResolverInterface;
+use Jurager\Filterable\Contracts\SortResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class PriceWithTaxSortResolver implements SortResolverInterface
+class PriceWithTaxSortResolver implements SortResolver
 {
     public function resolve(Builder $query, string $field, string $direction, Model $model): bool
     {
@@ -112,7 +112,9 @@ Do **not** add the field to `$sortable` — resolvers are only called for fields
 
 ## Route Model Binding
 
-`HasFilterable` overrides `resolveRouteBinding()` to support EAV attribute lookups and call `loadFilteredRelations()` after the model is resolved. This applies the same `filter[included.*]` eager-loading that works for collection queries:
+`HasFilterable` overrides `resolveRouteBinding()` to support EAV attribute lookups: when the route key differs from the primary key and the model has a `whereAttribute()` scope (from `jurager/eav`), it looks the model up by that attribute instead of a plain column.
+
+`filter[included.*]` eager-loading (see [Filtered Eager-Loading](relations.md#filtered-eager-loading-included)) is applied separately and automatically to **every** model retrieval — including route model binding — via a global `Model::retrieved` listener registered by the service provider. No manual wiring is required:
 
 ```php
 // Route definition
@@ -122,7 +124,7 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 GET /products/42?filter[included.prices.price_type_id][in]=1
 ```
 
-The resolved `Product` instance will have `prices` already loaded with the filter applied. See [Filtered Eager-Loading](relations.md#filtered-eager-loading-included) for the full requirements.
+The resolved `Product` instance will have `prices` already loaded with the filter applied. Disable this globally with `FILTERABLE_AUTO_LOAD_INCLUDED_RELATIONS=false` (see [Installation](installation.md)) — with it disabled, call `$model->loadIncludedRelations($filter)` yourself wherever you need it.
 
 **Changing the lookup field**
 
@@ -142,10 +144,7 @@ public function resolveRouteBinding($value, $field = null): ?static
 {
     $field ??= ctype_digit((string) $value) ? $this->getKeyName() : 'slug';
 
-    $model = $this->where($field, $value)->first();
-    $model?->loadFilteredRelations();
-
-    return $model;
+    return $this->where($field, $value)->first();
 }
 ```
 
@@ -157,14 +156,10 @@ public function resolveRouteBinding($value, $field = null): ?static
     $field ??= ctype_digit((string) $value) ? $this->getKeyName() : 'code';
 
     if ($field !== $this->getKeyName() && method_exists($this, 'scopeWhereAttribute')) {
-        $model = $this->whereAttribute($field, $value)->first();
-    } else {
-        $model = parent::resolveRouteBinding($value, $field);
+        return $this->whereAttribute($field, $value)->first();
     }
 
-    $model?->loadFilteredRelations();
-
-    return $model;
+    return parent::resolveRouteBinding($value, $field);
 }
 ```
 

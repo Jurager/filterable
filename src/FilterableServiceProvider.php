@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable;
 
 use Illuminate\Database\Eloquent\Model;
@@ -7,6 +9,9 @@ use Illuminate\Support\ServiceProvider;
 
 class FilterableServiceProvider extends ServiceProvider
 {
+    /** Container tag used to auto-wire custom resolvers. */
+    public const string RESOLVER_TAG = 'filterable.resolvers';
+
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/filterable.php', 'filterable');

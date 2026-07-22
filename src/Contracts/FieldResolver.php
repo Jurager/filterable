@@ -1,16 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Contracts;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-interface FieldResolverInterface
+/** Handle unrecognized filter keys for a model. */
+interface FieldResolver
 {
-    /**
-     * Handle a plain filter key not declared in $filterable.
-     *
-     * Return true if the filter was applied, false to pass to the next resolver.
-     */
+    /** Attempt to resolve and apply a custom filter, returning true if handled. */
     public function resolve(Builder $query, string $name, mixed $value, Model $model): bool;
 }

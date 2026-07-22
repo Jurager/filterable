@@ -1,35 +1,22 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Concerns;
 
+/** Provide cache configuration options for filterable classes. */
 trait HasCacheOptions
 {
     /**
-     * @var array{enabled?: bool, ttl?: int, tags?: array}
+     * Cache configuration options.
+     *
+     * @var array{enabled?: bool, ttl?: int, tags?: array<int, string>}
      */
     protected array $cache = [];
 
-    /**
-     * @return bool
-     */
+    /** Determine if caching is enabled. */
     public function isCacheEnabled(): bool
     {
-        return !empty($this->cache);
-    }
-
-    /**
-     * @return int
-     */
-    public function getCacheTtl(): int
-    {
-        return $this->cache['ttl'] ?? (int) config('filterable.cache.ttl', 3600);
-    }
-
-    /**
-     * @return array
-     */
-    public function getCacheTags(): array
-    {
-        return $this->cache['tags'] ?? [];
+        return $this->cache['enabled'] ?? false;
     }
 }

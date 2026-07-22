@@ -1,16 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Contracts;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-interface SortResolverInterface
+/** Handle unrecognized sort fields for a model. */
+interface SortResolver
 {
-    /**
-     * Handle a sort field not listed in $sortable.
-     *
-     * Return true if the sort was applied, false to pass to the next resolver.
-     */
+    /** Attempt to resolve and apply a custom sort, returning true if handled. */
     public function resolve(Builder $query, string $field, string $direction, Model $model): bool;
 }

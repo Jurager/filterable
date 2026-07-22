@@ -1,33 +1,25 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Sorting;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Jurager\Filterable\Contracts\SortResolverInterface;
+use Jurager\Filterable\Contracts\SortResolver;
 
-/**
- * Applies a JSON:API sort string to an Eloquent query.
- * Format: sort=name,-created_at (comma-separated, "-" prefix = DESC).
- */
+/** Apply a JSON:API formatted sort string to an Eloquent query. */
 class SortApplier
 {
     /**
-     * @param SortResolverInterface[] $resolvers
+     * @param array<int, SortResolver> $resolvers
      */
     public function __construct(
         private readonly array $resolvers = [],
     ) {
     }
 
-    /**
-     * Apply sort string to the query builder.
-     * @param Builder $query
-     * @param string $sort
-     * @param array $sortable
-     * @param Model $model
-     * @return Builder
-     */
+    /** Apply the sort string to the query builder. */
     public function apply(Builder $query, string $sort, array $sortable, Model $model): Builder
     {
         $query->reorder();
@@ -45,7 +37,7 @@ class SortApplier
             $col       = $desc ? substr($segment, 1) : $segment;
             $direction = $desc ? 'desc' : 'asc';
 
-            if (!preg_match('/^\w+(\.\w+)*$/', $col)) {
+            if (! preg_match('/^\w+(\.\w+)*$/', $col)) {
                 continue;
             }
 
@@ -59,12 +51,7 @@ class SortApplier
         return $query;
     }
 
-    /**
-     * Normalise $sortable to an alias → column map.
-     * Plain entries ('id') map to themselves; keyed entries ('date' => 'created_at') map alias to column.
-     * @param array $sortable
-     * @return array<string, string>
-     */
+    /** Normalize the sortable configuration to an alias-to-column map. */
     private function resolveSortable(array $sortable): array
     {
         $resolved = [];
@@ -80,14 +67,7 @@ class SortApplier
         return $resolved;
     }
 
-    /**
-     * Delegate an unknown sort field to registered resolvers.
-     * @param Builder $query
-     * @param string $field
-     * @param string $direction
-     * @param Model $model
-     * @return void
-     */
+    /** Delegate an unknown sort field to the registered resolvers. */
     private function delegateUnknown(Builder $query, string $field, string $direction, Model $model): void
     {
         foreach ($this->resolvers as $resolver) {

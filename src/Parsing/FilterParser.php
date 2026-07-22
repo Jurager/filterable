@@ -1,54 +1,57 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Parsing;
 
 use Jurager\Filterable\Support\FilterOperator;
 use Jurager\Filterable\Support\ParsedFilters;
 
-/**
- * Transforms a raw filter[] array into a structured ParsedFilters value object.
- */
+/** Transform raw filter input into a structured ParsedFilters instance. */
 class FilterParser
 {
-    /**
-     * Parse raw filter input into a structured ParsedFilters instance.
-     * @param array $raw
-     * @param array $filterable
-     * @return ParsedFilters
-     */
+    /** Parse raw filter input into a structured ParsedFilters instance. */
     public function parse(array $raw, array $filterable): ParsedFilters
     {
         $orGroups  = $this->extractOrGroups($raw);
         $andGroups = $this->extractAndGroups($raw);
         $included  = $this->extractIncludedFilters($raw);
 
-        $raw      = $this->removeEmptyValues($raw);
-        $included = array_filter($included, static fn ($v) => $v !== null && $v !== '');
+        $raw = $this->flattenBracketFilters($this->removeEmptyValues($raw));
 
-        $raw       = $this->flattenBracketFilters($raw);
-        $orGroups  = array_values(array_filter(
-            array_map(fn ($g) => $this->flattenBracketFilters($this->removeEmptyValues($g)), $orGroups),
-            static fn ($g) => $g !== [],
-        ));
-        $andGroups = array_values(array_filter(
-            array_map(fn ($g) => $this->flattenBracketFilters($this->removeEmptyValues($g)), $andGroups),
-            static fn ($g) => $g !== [],
-        ));
+        $cleanIncluded = [];
+        foreach ($included as $key => $v) {
+            if ($v !== null && $v !== '') {
+                $cleanIncluded[$key] = $v;
+            }
+        }
+
+        $cleanOrGroups = [];
+        foreach ($orGroups as $group) {
+            $cleaned = $this->flattenBracketFilters($this->removeEmptyValues($group));
+            if (! empty($cleaned)) {
+                $cleanOrGroups[] = $cleaned;
+            }
+        }
+
+        $cleanAndGroups = [];
+        foreach ($andGroups as $group) {
+            $cleaned = $this->flattenBracketFilters($this->removeEmptyValues($group));
+            if (! empty($cleaned)) {
+                $cleanAndGroups[] = $cleaned;
+            }
+        }
 
         return new ParsedFilters(
             filters:   $raw,
-            orGroups:  $orGroups,
-            andGroups: $andGroups,
-            included:  $included,
+            orGroups:  $cleanOrGroups,
+            andGroups: $cleanAndGroups,
+            included:  $cleanIncluded,
             allowed:   $this->resolveAllowed($filterable),
         );
     }
 
-    /**
-     * Recursively remove null and empty-string values from a filter array.
-     * @param array $filters
-     * @return array
-     */
+    /** Recursively remove null and empty-string values from a filter array. */
     private function removeEmptyValues(array $filters): array
     {
         $result = [];
@@ -64,11 +67,7 @@ class FilterParser
         return $result;
     }
 
-    /**
-     * Clean a single filter value, returning null when it should be dropped.
-     * @param mixed $value
-     * @return mixed
-     */
+    /** Clean a single filter value, returning null when it should be dropped. */
     private function cleanValue(mixed $value): mixed
     {
         if ($value === null || $value === '') {
@@ -76,13 +75,17 @@ class FilterParser
         }
 
         if (is_array($value)) {
-            if (array_is_list($value)) {
-                $cleaned = array_values(array_filter($value, static fn ($v) => $v !== null && $v !== ''));
-
-                return $cleaned === [] ? null : $cleaned;
-            }
-
             $cleaned = [];
+
+            if (array_is_list($value)) {
+                foreach ($value as $v) {
+                    if ($v !== null && $v !== '') {
+                        $cleaned[] = $v;
+                    }
+                }
+
+                return empty($cleaned) ? null : $cleaned;
+            }
 
             foreach ($value as $k => $v) {
                 $cv = $this->cleanValue($v);
@@ -92,32 +95,21 @@ class FilterParser
                 }
             }
 
-            return $cleaned === [] ? null : $cleaned;
+            return empty($cleaned) ? null : $cleaned;
         }
 
         return $value;
     }
 
-    /**
-     * Flatten bracket-format relation filters to dot notation.
-     * filter[categories][code]=123 → categories.code=123
-     * filter[sku][like]=red stays unchanged (all inner keys are operators).
-     * @param array $filters
-     * @return array
-     */
+    /** Flatten bracket-format relation filters to dot notation. */
     private function flattenBracketFilters(array $filters): array
     {
         $result = [];
 
         foreach ($filters as $key => $value) {
-            if (
-                is_string($key) &&
-                is_array($value) &&
-                !array_is_list($value) &&
-                !$this->allKeysAreOperators($value)
-            ) {
+            if (is_string($key) && is_array($value) && ! array_is_list($value) && ! $this->allKeysAreOperators($value)) {
                 foreach ($value as $subKey => $subValue) {
-                    $result[$key . '.' . $subKey] = $subValue;
+                    $result["{$key}.{$subKey}"] = $subValue;
                 }
             } else {
                 $result[$key] = $value;
@@ -127,96 +119,103 @@ class FilterParser
         return $result;
     }
 
-    /**
-     * Check whether all keys in an array are known filter operator aliases.
-     * @param array $value
-     * @return bool
-     */
+    /** Check whether all keys in an array are known filter operator aliases. */
     private function allKeysAreOperators(array $value): bool
     {
-        foreach (array_keys($value) as $key) {
-            if (!FilterOperator::isAlias((string) $key)) {
+        if (empty($value)) {
+            return false;
+        }
+
+        foreach ($value as $key => $_) {
+            if (! FilterOperator::isAlias((string) $key)) {
                 return false;
             }
         }
 
-        return $value !== [];
+        return true;
     }
 
-    /**
-     * Extract and remove OR groups from the raw filter array.
-     * @param array $raw
-     * @return array
-     */
+    /** Extract and remove OR groups from the raw filter array. */
     private function extractOrGroups(array &$raw): array
     {
-        if (!array_key_exists('or', $raw)) {
+        if (! isset($raw['or'])) {
             return [];
         }
 
         $or = $raw['or'];
         unset($raw['or']);
 
-        if (!is_array($or) || $or === []) {
+        if (! is_array($or) || empty($or)) {
             return [];
         }
 
         if (array_is_list($or)) {
-            return array_values(array_filter($or, static fn ($g) => is_array($g) && $g !== []));
+            $result = [];
+            foreach ($or as $group) {
+                if (is_array($group) && ! empty($group)) {
+                    $result[] = $group;
+                }
+            }
+            return $result;
         }
 
-        if (!array_diff(array_map('strval', array_keys($or)), FilterOperator::aliases())) {
+        $allOperators = true;
+        foreach ($or as $key => $_) {
+            if (! in_array((string) $key, FilterOperator::aliases(), true)) {
+                $allOperators = false;
+                break;
+            }
+        }
+
+        if ($allOperators) {
             return [];
         }
 
-        return array_map(static fn ($field, $value) => [(string) $field => $value], array_keys($or), $or);
+        $result = [];
+        foreach ($or as $field => $value) {
+            $result[] = [(string) $field => $value];
+        }
+
+        return $result;
     }
 
-    /**
-     * Extract and remove AND groups from the raw filter array.
-     * @param array $raw
-     * @return array
-     */
+    /** Extract and remove AND groups from the raw filter array. */
     private function extractAndGroups(array &$raw): array
     {
-        if (!array_key_exists('and', $raw)) {
+        if (! isset($raw['and'])) {
             return [];
         }
 
         $and = $raw['and'];
         unset($raw['and']);
 
-        if (!is_array($and) || $and === [] || !array_is_list($and)) {
+        if (! is_array($and) || ! array_is_list($and)) {
             return [];
         }
 
-        return array_values(array_filter($and, static fn ($g) => is_array($g) && $g !== []));
+        $result = [];
+        foreach ($and as $group) {
+            if (is_array($group) && ! empty($group)) {
+                $result[] = $group;
+            }
+        }
+
+        return $result;
     }
 
-    /**
-     * Extract and remove included relation filters from the raw filter array.
-     * @param array $raw
-     * @return array
-     */
+    /** Extract and remove included relation filters from the raw filter array. */
     private function extractIncludedFilters(array &$raw): array
     {
-        $included = [];
+        $included = ParsedFilters::extractIncluded($raw);
 
-        foreach ($raw as $key => $value) {
-            if (is_string($key) && str_starts_with($key, 'included.')) {
-                $included[substr($key, 9)] = $value;
-                unset($raw[$key]);
-            }
+        foreach (array_keys($included) as $key) {
+            unset($raw[ParsedFilters::INCLUDED_PREFIX . $key]);
         }
 
         return $included;
     }
 
-    /**
-     * Resolve the allowed field map from the $filterable declaration.
-     * @param array $filterable
-     * @return array
-     */
+    /** Resolve the allowed field map from the $filterable declaration. */
     private function resolveAllowed(array $filterable): array
     {
         $allowed = [];

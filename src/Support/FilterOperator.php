@@ -1,12 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Support;
 
-/**
- * All supported filter operators.
- * Canonical names (enum values) match what users declare in $filterable config.
- * Symbolic aliases (=, !=, >, …) are resolved via fromAlias().
- */
+/** Supported filter operators and their symbolic aliases. */
 enum FilterOperator: string
 {
     case Eq         = 'eq';
@@ -24,11 +22,7 @@ enum FilterOperator: string
     case NotBetween = 'not_between';
     case Tree       = 'tree';
 
-    /**
-     * Resolve any alias — canonical ('eq') or symbolic ('=') — to a case.
-     * @param string $alias
-     * @return static|null
-     */
+    /** Resolve a canonical or symbolic alias to its corresponding enum case. */
     public static function fromAlias(string $alias): ?self
     {
         return match ($alias) {
@@ -42,20 +36,13 @@ enum FilterOperator: string
         };
     }
 
-    /**
-     * Check whether a string is a valid operator alias.
-     * @param string $key
-     * @return bool
-     */
+    /** Determine if a given string is a valid operator alias. */
     public static function isAlias(string $key): bool
     {
         return self::fromAlias($key) !== null;
     }
 
-    /**
-     * Get all valid alias strings.
-     * @return array
-     */
+    /** Get all valid operator alias strings. */
     public static function aliases(): array
     {
         return [...array_column(self::cases(), 'value'), '=', '!=', '>', '>=', '<', '<='];

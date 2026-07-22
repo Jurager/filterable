@@ -1,16 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jurager\Filterable\Contracts;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-interface RelationResolverInterface
+/** Handle unrecognized dotted relation filter keys for a model. */
+interface RelationResolver
 {
-    /**
-     * Handle a dotted filter key (relation.attribute) not declared in $filterable.
-     *
-     * Return true if the filter was applied, false to pass to the next resolver.
-     */
+    /** Attempt to resolve and apply a custom relation filter, returning true if handled. */
     public function resolveRelation(Builder $query, string $name, mixed $value, Model $model): bool;
 }

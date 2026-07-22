@@ -24,46 +24,34 @@ protected array $sortable = ['id', 'sku', 'price', 'created_at'];
 
 A request that attempts to sort by an unlisted field is silently ignored. Only exact matches are checked — there is no wildcard syntax.
 
-## Default Sort
-
-Set `$defaultSort` on the model to apply ordering when no `sort` parameter is present in the request:
-
-```php
-protected ?string $defaultSort = '-created_at';
-```
-
-The same prefix convention applies: a leading `-` means descending.
-
 ## Applying Sort in the Controller
 
-```php
-Product::query()->filter()->sort()->paginate();
-```
-
-`->sort()` reads the `sort` parameter from the current request. Pass an explicit `Request` instance or `null` to skip:
+`->sort()` takes the raw `sort` string explicitly — pull it from the request yourself, or pass `null` to skip sorting:
 
 ```php
-Product::query()->sort($request)->get();
+Product::query()->sort($request->query('sort'))->get();
 ```
 
 ## Custom Sort Resolvers
 
-For sort fields that require custom SQL — joined columns, expressions, or relations — implement `SortResolverInterface`:
+For sort fields that require custom SQL — joined columns, expressions, or relations — implement `SortResolver`. Return `true` if the sort was applied, `false` to pass to the next resolver:
 
 ```php
-use Jurager\Filterable\Contracts\SortResolverInterface;
+use Jurager\Filterable\Contracts\SortResolver;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
-class PriceWithTaxSortResolver implements SortResolverInterface
+class PriceWithTaxSortResolver implements SortResolver
 {
-    public function handles(): string
+    public function resolve(Builder $query, string $field, string $direction, Model $model): bool
     {
-        return 'price_with_tax';
-    }
+        if ($field !== 'price_with_tax') {
+            return false;
+        }
 
-    public function apply(Builder $query, string $direction): void
-    {
         $query->orderByRaw('price * 1.2 ' . $direction);
+
+        return true;
     }
 }
 ```
