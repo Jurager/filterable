@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\Schema;
 use Jurager\Filterable\FilterableServiceProvider;
 use Jurager\Filterable\Tests\Fixtures\Article;
 use Jurager\Filterable\Tests\Fixtures\AutoCachedPost;
+use Jurager\Filterable\Tests\Fixtures\FlatCategory;
 use Jurager\Filterable\Tests\Fixtures\Post;
 use Jurager\Filterable\Tests\Fixtures\Price;
+use Jurager\Filterable\Tests\Fixtures\TreeCategory;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use ReflectionClass;
 
@@ -35,7 +37,7 @@ abstract class TestCase extends BaseTestCase
 
     protected function defineDatabaseMigrations(): void
     {
-        foreach (['post_tag', 'prices', 'posts', 'tags', 'categories'] as $table) {
+        foreach (['post_tag', 'prices', 'posts', 'tags', 'categories', 'tree_categories', 'flat_categories'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -43,6 +45,16 @@ abstract class TestCase extends BaseTestCase
             $table->id();
             $table->string('name');
             $table->timestamps();
+        });
+
+        Schema::create('tree_categories', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+        });
+
+        Schema::create('flat_categories', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
         });
 
         Schema::create('tags', function (Blueprint $table): void {
@@ -94,7 +106,7 @@ abstract class TestCase extends BaseTestCase
      */
     private function resetFilterableObserverGuard(): void
     {
-        foreach ([Post::class, Price::class, Article::class, AutoCachedPost::class] as $class) {
+        foreach ([Post::class, Price::class, Article::class, AutoCachedPost::class, TreeCategory::class, FlatCategory::class] as $class) {
             $property = (new ReflectionClass($class))->getProperty('filterableObserved');
             $property->setAccessible(true);
             $property->setValue(null, []);

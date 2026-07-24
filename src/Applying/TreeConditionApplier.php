@@ -21,7 +21,7 @@ class TreeConditionApplier
     {
         $ids = $this->parseIds($value);
 
-        if (empty($ids) || ! $this->supports($model)) {
+        if (empty($ids) || ! $this->supports($query, $model)) {
             return;
         }
 
@@ -42,9 +42,10 @@ class TreeConditionApplier
     }
 
     /** Determine whether the model's builder exposes nested-set tree scopes. */
-    private function supports(Model $model): bool
+    private function supports(Builder $query, Model $model): bool
     {
-        return method_exists($model, 'whereDescendantOrSelf')
+        return method_exists($query, 'whereDescendantOrSelf')
+            || method_exists($model, 'whereDescendantOrSelf')
             || method_exists($model, 'scopeWhereDescendantOrSelf')
             || Builder::hasGlobalMacro('whereDescendantOrSelf');
     }
