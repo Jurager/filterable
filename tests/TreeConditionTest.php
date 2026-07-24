@@ -45,4 +45,14 @@ class TreeConditionTest extends TestCase
 
         $this->assertSame([1, 2, 3], $results->pluck('id')->sort()->values()->all());
     }
+
+    /** matchesFilter() lets an already-resolved model (e.g. from route binding) be checked against a scope. */
+    public function test_matches_filter_checks_a_resolved_model_against_a_tree_scope(): void
+    {
+        $inTree = TreeCategory::find(1);
+        $outsideTree = TreeCategory::find(2);
+
+        $this->assertTrue($inTree->matchesFilter(['id' => ['tree' => '1,3']]));
+        $this->assertFalse($outsideTree->matchesFilter(['id' => ['tree' => '1,3']]));
+    }
 }

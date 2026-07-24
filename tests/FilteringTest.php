@@ -177,6 +177,15 @@ class FilteringTest extends TestCase
         $this->assertSame(3, $count);
     }
 
+    public function test_matches_filter_checks_an_already_resolved_model(): void
+    {
+        $active = Post::where('title', 'Alpha Phone')->first();
+        $draft  = Post::where('title', 'Beta Book')->first();
+
+        $this->assertTrue($active->matchesFilter(['status' => ['eq' => 'active']]));
+        $this->assertFalse($draft->matchesFilter(['status' => ['eq' => 'active']]));
+    }
+
     public function test_too_many_filters_throws(): void
     {
         $this->expectException(TooManyFiltersException::class);

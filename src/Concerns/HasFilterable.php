@@ -173,4 +173,12 @@ trait HasFilterable
 
         return $this;
     }
+
+    /**
+     * Determine whether this model instance satisfies the given filter conditions.
+     */
+    public function matchesFilter(array $filter): bool
+    {
+        return $this->newQuery()->whereKey($this->getKey())->filter($filter)->exists();
+    }
 }
