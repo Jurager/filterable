@@ -60,6 +60,16 @@ trait HasFilterable
         return $this->filterablePropertyArray('cache');
     }
 
+    /**
+     * Get the fields the model allows filtering on, mapped to their permitted operators.
+     *
+     * @return array<string, array<string>|string>
+     */
+    public function filterableFields(): array
+    {
+        return $this->filterablePropertyArray('filterable');
+    }
+
     /** Read an array property from the model if defined. */
     private function filterablePropertyArray(string $name): array
     {
