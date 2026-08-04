@@ -6,7 +6,6 @@ namespace Jurager\Filterable\Tests;
 
 use Illuminate\Support\Facades\DB;
 use Jurager\Filterable\Tests\Fixtures\Article;
-use Jurager\Filterable\Tests\Fixtures\AutoCachedPost;
 use Jurager\Filterable\Tests\Fixtures\Post;
 
 class CachingTest extends TestCase
@@ -21,11 +20,11 @@ class CachingTest extends TestCase
 
     public function test_cache_serves_repeated_query_without_hitting_the_database(): void
     {
-        Post::query()->filter(['status' => 'active'])->cache()->get();
+        Post::query()->filter(['status' => 'active'])->cached()->get();
 
         DB::enableQueryLog();
 
-        $cached = Post::query()->filter(['status' => 'active'])->cache()->get();
+        $cached = Post::query()->filter(['status' => 'active'])->cached()->get();
 
         $this->assertCount(0, DB::getQueryLog());
         $this->assertSame(['Alpha'], $cached->pluck('title')->all());
@@ -33,60 +32,25 @@ class CachingTest extends TestCase
 
     public function test_saving_a_model_invalidates_its_cache_tags(): void
     {
-        Post::query()->filter(['status' => 'active'])->cache()->get();
+        Post::query()->filter(['status' => 'active'])->cached()->get();
 
         Post::where('title', 'Beta')->first()->update(['status' => 'active']);
 
         DB::enableQueryLog();
 
-        $refreshed = Post::query()->filter(['status' => 'active'])->cache()->get();
+        $refreshed = Post::query()->filter(['status' => 'active'])->cached()->get();
 
         $this->assertNotCount(0, DB::getQueryLog());
         $this->assertSame(['Alpha', 'Beta'], $refreshed->pluck('title')->sort()->values()->all());
     }
 
-    public function test_cache_when_conditionally_enables_cache(): void
-    {
-        Post::query()->filter(['status' => 'active'])->cacheWhen(true)->get();
-
-        DB::enableQueryLog();
-
-        Post::query()->filter(['status' => 'active'])->cacheWhen(true)->get();
-
-        $this->assertCount(0, DB::getQueryLog());
-    }
-
-    public function test_cache_when_false_does_not_enable_cache(): void
-    {
-        Post::query()->filter(['status' => 'active'])->cacheWhen(false)->get();
-
-        DB::enableQueryLog();
-
-        Post::query()->filter(['status' => 'active'])->cacheWhen(false)->get();
-
-        $this->assertNotCount(0, DB::getQueryLog());
-    }
-
-    public function test_model_level_cache_enabled_is_honored_without_calling_cache(): void
-    {
-        // AutoCachedPost declares $cache['enabled'] = true — per docs/caching.md this must
-        // enable caching for every ->filter() query even without an explicit ->cache() call.
-        AutoCachedPost::query()->filter(['status' => 'active'])->get();
-
-        DB::enableQueryLog();
-
-        AutoCachedPost::query()->filter(['status' => 'active'])->get();
-
-        $this->assertCount(0, DB::getQueryLog());
-    }
-
     public function test_count_is_cached(): void
     {
-        Post::query()->filter(['status' => 'active'])->cache()->count();
+        Post::query()->filter(['status' => 'active'])->cached()->count();
 
         DB::enableQueryLog();
 
-        $count = Post::query()->filter(['status' => 'active'])->cache()->count();
+        $count = Post::query()->filter(['status' => 'active'])->cached()->count();
 
         $this->assertCount(0, DB::getQueryLog());
         $this->assertSame(1, $count);
@@ -94,13 +58,13 @@ class CachingTest extends TestCase
 
     public function test_exists_and_doesnt_exist_are_cached(): void
     {
-        Post::query()->filter(['status' => 'active'])->cache()->exists();
-        Post::query()->filter(['status' => 'archived'])->cache()->doesntExist();
+        Post::query()->filter(['status' => 'active'])->cached()->exists();
+        Post::query()->filter(['status' => 'archived'])->cached()->doesntExist();
 
         DB::enableQueryLog();
 
-        $exists      = Post::query()->filter(['status' => 'active'])->cache()->exists();
-        $doesntExist = Post::query()->filter(['status' => 'archived'])->cache()->doesntExist();
+        $exists      = Post::query()->filter(['status' => 'active'])->cached()->exists();
+        $doesntExist = Post::query()->filter(['status' => 'archived'])->cached()->doesntExist();
 
         $this->assertCount(0, DB::getQueryLog());
         $this->assertTrue($exists);
@@ -111,8 +75,8 @@ class CachingTest extends TestCase
     {
         // Same filter, same underlying SQL — get() and count() must not share a cache
         // entry, or one would deserialize the other's cached value as the wrong type.
-        $count = Post::query()->filter(['status' => 'active'])->cache()->count();
-        $rows  = Post::query()->filter(['status' => 'active'])->cache()->get();
+        $count = Post::query()->filter(['status' => 'active'])->cached()->count();
+        $rows  = Post::query()->filter(['status' => 'active'])->cached()->get();
 
         $this->assertSame(1, $count);
         $this->assertSame(['Alpha'], $rows->pluck('title')->all());
@@ -127,30 +91,26 @@ class CachingTest extends TestCase
         config(['cache.default' => 'file']);
         config(['cache.stores.file.path' => sys_get_temp_dir() . '/filterable-test-cache']);
 
-        $result = Post::query()->filter(['status' => 'active'])->cache()->get();
+        $result = Post::query()->filter(['status' => 'active'])->cached()->get();
 
         $this->assertSame(['Alpha'], $result->pluck('title')->all());
     }
 
     public function test_invalidation_works_for_models_without_a_cache_property(): void
     {
-        // Article declares no $cache property at all — caching here is driven purely by
-        // the global config, falling back to the table name for tags. Invalidation must
-        // still fire; it must not require a per-model $cache declaration to opt in.
-        config(['filterable.cache.enabled' => true]);
-
+        // Article declares no $cache property at all — tags fall back to the table name.
         // 'posts' is shared with the Post fixture (setUp already inserted rows there), so
         // use a status value unique to this test. Article uppercases 'status' filter input
         // via its sanitizer, so rows are stored pre-uppercased to match what filtering for
         // 'archived' will actually look up.
         Article::create(['title' => 'Gamma', 'price' => 5, 'status' => 'ARCHIVED']);
-        Article::query()->filter(['status' => 'archived'])->get();
+        Article::query()->filter(['status' => 'archived'])->cached()->get();
 
         Article::create(['title' => 'Delta', 'price' => 7, 'status' => 'ARCHIVED']);
 
         DB::enableQueryLog();
 
-        $refreshed = Article::query()->filter(['status' => 'archived'])->get();
+        $refreshed = Article::query()->filter(['status' => 'archived'])->cached()->get();
 
         $this->assertNotCount(0, DB::getQueryLog());
         $this->assertSame(['Gamma', 'Delta'], $refreshed->pluck('title')->all());

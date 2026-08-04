@@ -12,9 +12,9 @@ use Jurager\Filterable\Contracts\SortResolver;
 class FilterableFactory
 {
     /** Create a new Filterable instance with the given configuration. */
-    public function make(array $filterable, array $sortable, array $cache, array $sanitizers): Filterable
+    public function make(array $filterable, array $sortable, array $sanitizers): Filterable
     {
-        $instance = new Filterable($filterable, $sortable, $cache, $sanitizers);
+        $instance = new Filterable($filterable, $sortable, $sanitizers);
 
         foreach (app()->tagged(FilterableServiceProvider::RESOLVER_TAG) as $resolver) {
             if ($resolver instanceof FieldResolver) {

@@ -8,7 +8,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Jurager\Filterable\FilterableServiceProvider;
 use Jurager\Filterable\Tests\Fixtures\Article;
-use Jurager\Filterable\Tests\Fixtures\AutoCachedPost;
 use Jurager\Filterable\Tests\Fixtures\FlatCategory;
 use Jurager\Filterable\Tests\Fixtures\Post;
 use Jurager\Filterable\Tests\Fixtures\Price;
@@ -106,7 +105,7 @@ abstract class TestCase extends BaseTestCase
      */
     private function resetFilterableObserverGuard(): void
     {
-        foreach ([Post::class, Price::class, Article::class, AutoCachedPost::class, TreeCategory::class, FlatCategory::class] as $class) {
+        foreach ([Post::class, Price::class, Article::class, TreeCategory::class, FlatCategory::class] as $class) {
             $property = (new ReflectionClass($class))->getProperty('filterableObserved');
             $property->setAccessible(true);
             $property->setValue(null, []);

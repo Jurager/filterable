@@ -6,11 +6,10 @@ namespace Jurager\Filterable\Concerns;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Query\Builder as QueryBuilder;
+use Jurager\Filterable\Cache\CachingConnection;
 use Jurager\Filterable\Cache\FilterableCacheObserver;
 use Jurager\Filterable\Filterable;
 use Jurager\Filterable\FilterableFactory;
-use Jurager\Filterable\Query\FilterableBuilder;
 use Jurager\Filterable\Scopes\PendingFilterScope;
 use Jurager\Filterable\Scopes\PendingSortScope;
 use Jurager\Filterable\Support\ParsedFilters;
@@ -18,6 +17,12 @@ use Jurager\Filterable\Support\ParsedFilters;
 /** Provide filtering, sorting, and caching capabilities to Eloquent models. */
 trait HasFilterable
 {
+    /** Global scope key under which the pending filter scope is registered. */
+    public const string FILTER_SCOPE = '_filterable_filter';
+
+    /** Global scope key under which the pending sort scope is registered. */
+    public const string SORT_SCOPE = '_filterable_sort';
+
     /**
      * Track observed models to prevent duplicate listeners.
      *
@@ -42,16 +47,6 @@ trait HasFilterable
 
             $class::observe(new FilterableCacheObserver());
         });
-    }
-
-    /**
-     * Create a new Eloquent query builder for the model.
-     *
-     * @param QueryBuilder $query
-     */
-    public function newEloquentBuilder($query): FilterableBuilder
-    {
-        return new FilterableBuilder($query);
     }
 
     /** Get the cache configuration for the model. */
@@ -82,7 +77,6 @@ trait HasFilterable
         return $this->filterableInstance ??= (new FilterableFactory())->make(
             $this->filterablePropertyArray('filterable'),
             $this->filterablePropertyArray('sortable'),
-            $this->filterableCacheConfig(),
             $this->filterablePropertyArray('sanitizers'),
         );
     }
@@ -94,13 +88,7 @@ trait HasFilterable
             return $query;
         }
 
-        $filterable = $this->newFilterable();
-
-        $query->withGlobalScope(FilterableBuilder::FILTER_SCOPE, new PendingFilterScope($filterable, $filter));
-
-        if ($query instanceof FilterableBuilder && (config('filterable.cache.enabled', false) === true || $filterable->isCacheEnabled())) {
-            $query->enableCache();
-        }
+        $query->withGlobalScope(self::FILTER_SCOPE, new PendingFilterScope($this->newFilterable(), $filter));
 
         return $query;
     }
@@ -108,7 +96,7 @@ trait HasFilterable
     /** Apply a sort specification to the query. */
     public function scopeSort(Builder $query, ?string $sort): Builder
     {
-        $query->withGlobalScope(FilterableBuilder::SORT_SCOPE, new PendingSortScope($this->newFilterable(), $sort));
+        $query->withGlobalScope(self::SORT_SCOPE, new PendingSortScope($this->newFilterable(), $sort));
 
         return $query;
     }
@@ -125,24 +113,16 @@ trait HasFilterable
             ->all();
     }
 
-    /** Enable cache for the current filter query. */
-    public function scopeCache(Builder $query, ?int $ttl = null): Builder
+    /**
+     * Cache the result of the current query's terminal call
+     */
+    public function scopeCached(Builder $query, ?int $ttl = null): Builder
     {
-        if ($query instanceof FilterableBuilder) {
-            $query->enableCache($ttl);
-        }
+        $config = $this->filterableCacheConfig();
 
-        return $query;
-    }
+        $raw = $query->getQuery();
 
-    /** Conditionally enable cache for the current filter query. */
-    public function scopeCacheWhen(Builder $query, bool|callable $condition, ?int $ttl = null): Builder
-    {
-        $shouldCache = is_callable($condition) ? $condition() : $condition;
-
-        if ($shouldCache) {
-            return $this->scopeCache($query, $ttl);
-        }
+        $raw->connection = new CachingConnection($raw->getConnection(), $config['tags'] ?? [$this->getTable()], $ttl ?? $config['ttl'] ?? config('filterable.cache.ttl', 3600));
 
         return $query;
     }
@@ -173,6 +153,7 @@ trait HasFilterable
         }
 
         foreach ($this->newFilterable()->filterableRelations($included, $this) as $relation => $callback) {
+
             /** @var Relation $query */
             $query = $this->{$relation}();
 

@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Jurager\Filterable\Applying\ConditionApplier;
-use Jurager\Filterable\Concerns\HasCacheOptions;
 use Jurager\Filterable\Concerns\HasFilterable;
 use Jurager\Filterable\Contracts\FieldResolver;
 use Jurager\Filterable\Contracts\RelationResolver;
@@ -25,8 +24,6 @@ use Jurager\Filterable\Support\ParsedFilters;
 /** Base class for model-scoped filter definitions. */
 class Filterable
 {
-    use HasCacheOptions;
-
     /** Allowed filter fields and their permitted operators. */
     protected array $filterable = [];
 
@@ -57,11 +54,10 @@ class Filterable
     /** Lazily built sanitizer instance. */
     private ?Sanitizer $sanitizer = null;
 
-    public function __construct(array $filterable = [], array $sortable = [], array $cache = [], array $sanitizers = [])
+    public function __construct(array $filterable = [], array $sortable = [], array $sanitizers = [])
     {
         $this->filterable = $filterable ?: $this->filterable;
         $this->sortable   = $sortable ?: $this->sortable;
-        $this->cache      = $cache ?: $this->cache;
         $this->sanitizers = $sanitizers ?: $this->sanitizers;
     }
 

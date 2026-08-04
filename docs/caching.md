@@ -7,28 +7,28 @@ weight: 70
 
 The full result of each terminal method is stored in cache. `get()` caches a `Collection`; `paginate()` caches a `LengthAwarePaginator`; `count()` caches an `int`. Different pages of a paginated query produce separate cache entries.
 
+Caching is always explicit — call `cached()` on the query you want cached. There is no global or per-model switch that enables it automatically; a query that never calls `cached()` never touches the cache.
+
 A taggable cache driver (Redis, Memcached) is required.
 
-## Global Configuration
+## Per-Query Control
 
-Enable caching for all models via `.env`:
-
-```
-FILTERABLE_CACHE=true
-FILTERABLE_CACHE_TTL=3600
+```php
+Product::query()->filter($filter)->cached()->paginate();
+Product::query()->filter($filter)->cached(ttl: 300)->paginate();
 ```
 
-When enabled globally, cache tags default to each model's table name — no per-model declarations needed.
+For conditional caching, use Laravel's own `when()`:
 
-Publish the config to change defaults:
-
-```bash
-php artisan vendor:publish --tag=filterable-config
+```php
+Product::query()->filter($filter)
+    ->when(auth()->user()->prefersCaching(), fn ($query) => $query->cached())
+    ->paginate();
 ```
 
 ## Per-Model Configuration
 
-Override cache settings on the model via the `$cache` array:
+`cached()` reads its tags and default TTL from the model's `$cache` array:
 
 ```php
 class Product extends Model
@@ -36,28 +36,26 @@ class Product extends Model
     use HasFilterable;
 
     protected array $cache = [
-        'enabled' => true,
-        'ttl'     => 600,
-        'tags'    => ['products', 'catalogue'],
+        'ttl'  => 600,
+        'tags' => ['products', 'catalogue'],
     ];
 }
 ```
 
-`enabled: true` takes effect regardless of the global config value.
-Omitting `tags` falls back to the model's table name.
+An explicit `ttl` argument to `cached()` takes priority over `$cache['ttl']`. Omitting `tags` falls back to the model's table name.
 
-## Per-Query Control
+## Global Configuration
 
-Enable or disable caching for a single query:
+Set the default TTL used when neither `cached()` nor the model's `$cache` array specifies one:
 
-```php
-// explicit
-Product::query()->filter($filter)->cache()->paginate();
-Product::query()->filter($filter)->cache(ttl: 300)->paginate();
+```
+FILTERABLE_CACHE_TTL=3600
+```
 
-// conditional
-Product::query()->filter($filter)->cacheWhen(auth()->user()->prefersCaching())->paginate();
-Product::query()->filter($filter)->cacheWhen(fn () => Cache::has('warm'))->paginate();
+Publish the config to change it directly:
+
+```bash
+php artisan vendor:publish --tag=filterable-config
 ```
 
 ## Cached Methods
@@ -73,11 +71,11 @@ Product::query()->filter($filter)->cacheWhen(fn () => Cache::has('warm'))->pagin
 | `exists()` | `bool` |
 | `doesntExist()` | `bool` |
 
-`chunk()`, `lazy()`, and aggregates run without caching.
+`chunk()`, `lazy()`, and `cursor()` run without caching — they stream results instead of returning a value that could be cached as a whole.
 
 ## Automatic Invalidation
 
-`FilterableCacheObserver` is registered automatically on boot when caching is enabled. It flushes the tag group on `saved`, `deleted`, `restored`, and `forceDeleted`.
+`FilterableCacheObserver` is registered automatically for every model using `HasFilterable`. It flushes the tag group on `saved`, `deleted`, `restored`, and `forceDeleted` — regardless of whether that model's queries actually use `cached()`, so invalidation is always correct once you start caching.
 
 ## Invalidating on Related Model Changes
 
