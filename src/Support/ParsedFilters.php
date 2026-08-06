@@ -31,6 +31,28 @@ readonly class ParsedFilters
         );
     }
 
+    /**
+     * Read a filter key as a list of positive integer IDs.
+     *
+     * @return array<int, int>
+     */
+    public static function ids(array $filter, string $key): array
+    {
+        $value = $filter[$key] ?? null;
+
+        if (is_array($value) && ! array_is_list($value)) {
+            $value = $value['in'] ?? $value['eq'] ?? null;
+        }
+
+        if ($value === null || $value === '') {
+            return [];
+        }
+
+        $items = is_array($value) ? $value : explode(',', (string) $value);
+
+        return array_values(array_filter(array_map('intval', $items), static fn (int $id): bool => $id > 0));
+    }
+
     /** Extract included relation filters from an array, stripping the prefix. */
     public static function extractIncluded(array $filter): array
     {

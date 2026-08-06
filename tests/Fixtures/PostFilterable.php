@@ -23,6 +23,13 @@ class PostFilterable extends Filterable
 
     protected array $sortable = ['id', 'title', 'price', 'created_at'];
 
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->addSortResolver(new RecordingSortResolver());
+    }
+
     /**
      * Custom filter method — dispatched for the 'featured' key, which is
      * intentionally absent from $filterable.

@@ -135,14 +135,18 @@ class Filterable
         return $query;
     }
 
-    /** Apply sorting to the query builder. */
-    public function sort(Builder $query, ?string $sort): Builder
+    /**
+     * Apply sorting to the query builder.
+     *
+     * @param array<string, mixed> $context Request-scoped values forwarded to the sort resolvers.
+     */
+    public function sort(Builder $query, ?string $sort, array $context = []): Builder
     {
         if (! $sort) {
             return $query;
         }
 
-        return $this->newSortApplier()->apply($query, $sort, $this->sortable, $query->getModel());
+        return $this->newSortApplier()->apply($query, $sort, $this->sortable, $query->getModel(), $context);
     }
 
     /**

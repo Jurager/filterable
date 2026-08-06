@@ -33,6 +33,9 @@ trait HasFilterable
     /** Cached Filterable definition instance. */
     private ?Filterable $filterableInstance = null;
 
+    /** @var array<string, mixed> Constraints awaiting the next sort() call on this model instance. */
+    private array $pendingSortContext = [];
+
     /** Boot the trait to attach the cache observer. */
     protected static function bootHasFilterable(): void
     {
@@ -78,25 +81,38 @@ trait HasFilterable
             $this->filterablePropertyArray('filterable'),
             $this->filterablePropertyArray('sortable'),
             $this->filterablePropertyArray('sanitizers'),
+            $this->filterablePropertyArray('resolvers'),
         );
     }
 
-    /** Apply filter conditions to the query. */
+    /**
+     * Apply filter conditions to the query.
+     */
     public function scopeFilter(Builder $query, array $filter): Builder
     {
         if (empty($filter)) {
             return $query;
         }
 
+        $this->pendingSortContext = ParsedFilters::extractIncluded($filter);
+
         $query->withGlobalScope(self::FILTER_SCOPE, new PendingFilterScope($this->newFilterable(), $filter));
 
         return $query;
     }
 
-    /** Apply a sort specification to the query. */
-    public function scopeSort(Builder $query, ?string $sort): Builder
+    /**
+     * Apply a sort specification to the query.
+     *
+     * @param array<string, mixed> $context Request-scoped values forwarded to the sort resolvers, for orderings that depend on data outside the model.
+     */
+    public function scopeSort(Builder $query, ?string $sort, array $context = []): Builder
     {
-        $query->withGlobalScope(self::SORT_SCOPE, new PendingSortScope($this->newFilterable(), $sort));
+        $pending = $this->pendingSortContext;
+
+        $this->pendingSortContext = [];
+
+        $query->withGlobalScope(self::SORT_SCOPE, new PendingSortScope($this->newFilterable(), $sort, [...$pending, ...$context]));
 
         return $query;
     }

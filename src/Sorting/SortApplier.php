@@ -19,8 +19,12 @@ class SortApplier
     ) {
     }
 
-    /** Apply the sort string to the query builder. */
-    public function apply(Builder $query, string $sort, array $sortable, Model $model): Builder
+    /**
+     * Apply the sort string to the query builder.
+     *
+     * @param array<string, mixed> $context Request-scoped values forwarded to the sort resolvers.
+     */
+    public function apply(Builder $query, string $sort, array $sortable, Model $model, array $context = []): Builder
     {
         $query->reorder();
 
@@ -44,7 +48,7 @@ class SortApplier
             if (array_key_exists($col, $allowed)) {
                 $query->orderBy($allowed[$col], $direction);
             } else {
-                $this->delegateUnknown($query, $col, $direction, $model);
+                $this->delegateUnknown($query, $col, $direction, $model, $context);
             }
         }
 
@@ -68,10 +72,10 @@ class SortApplier
     }
 
     /** Delegate an unknown sort field to the registered resolvers. */
-    private function delegateUnknown(Builder $query, string $field, string $direction, Model $model): void
+    private function delegateUnknown(Builder $query, string $field, string $direction, Model $model, array $context): void
     {
         foreach ($this->resolvers as $resolver) {
-            if ($resolver->resolve($query, $field, $direction, $model)) {
+            if ($resolver->resolve($query, $field, $direction, $model, $context)) {
                 return;
             }
         }

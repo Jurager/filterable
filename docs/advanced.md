@@ -3,9 +3,25 @@ title: Advanced
 weight: 80
 ---
 
+## Declaring Resolvers on the Model
+
+For a resolver or two, list them in `$resolvers` alongside `$filterable` and `$sortable`. Class strings are resolved through the container, instances are used as-is, and each is wired up by type — `FieldResolver`, `RelationResolver`, or `SortResolver`. A class implementing several of them is registered for each:
+
+```php
+class Product extends Model
+{
+    use HasFilterable;
+
+    protected array $sortable  = ['id', 'price'];
+    protected array $resolvers = [StockSortResolver::class];
+}
+```
+
+This is scoped to the model. Resolvers that should apply to *every* model belong in the container instead, tagged with `FilterableServiceProvider::RESOLVER_TAG`; both sources are merged.
+
 ## Custom Filterable Class
 
-When a model needs custom resolvers or reusable filter logic, create a class that extends `Filterable` and register it via `newFilterable()`:
+When a model needs reusable filter logic beyond a resolver list, create a class that extends `Filterable` and register it via `newFilterable()`:
 
 ```php
 class ProductFilterable extends Filterable
@@ -95,7 +111,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class PriceWithTaxSortResolver implements SortResolver
 {
-    public function resolve(Builder $query, string $field, string $direction, Model $model): bool
+    public function resolve(Builder $query, string $field, string $direction, Model $model, array $context = []): bool
     {
         if ($field !== 'price_with_tax') {
             return false;

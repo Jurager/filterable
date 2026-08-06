@@ -32,4 +32,7 @@ class Article extends Model
         'title'  => 'trim',
         'status' => UppercaseSanitizer::class,
     ];
+
+    /** One class serving both FieldResolver and SortResolver. */
+    protected array $resolvers = [CheapFieldResolver::class];
 }
