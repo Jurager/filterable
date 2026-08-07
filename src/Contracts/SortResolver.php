@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jurager\Filterable\Contracts;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /** Handle unrecognized sort fields for a model. */
@@ -15,5 +14,5 @@ interface SortResolver
      *
      * @param array<string, mixed> $context Request-scoped values passed to sort, for orderings that depend on data outside the model.
      */
-    public function resolve(Builder $query, string $field, string $direction, Model $model, array $context = []): bool;
+    public function resolve(object $query, string $field, string $direction, Model $model, array $context = []): bool;
 }

@@ -68,6 +68,19 @@ trait HasFilterable
         return $this->filterablePropertyArray('filterable');
     }
 
+    /**
+     * Get the resolvers declared on the model, as class strings or instances.
+     *
+     * Exposed so other engines — a search index, for one — can run the same resolvers over their own
+     * query objects instead of each defining a parallel set.
+     *
+     * @return array<int, object|class-string>
+     */
+    public function filterableResolvers(): array
+    {
+        return $this->filterablePropertyArray('resolvers');
+    }
+
     /** Read an array property from the model if defined. */
     private function filterablePropertyArray(string $name): array
     {

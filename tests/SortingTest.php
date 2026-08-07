@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jurager\Filterable\Tests;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Jurager\Filterable\Contracts\SortResolver;
 use Jurager\Filterable\Filterable;
@@ -58,7 +57,7 @@ class SortingTest extends TestCase
     public function test_custom_sort_resolver(): void
     {
         $resolver = new class () implements SortResolver {
-            public function resolve(Builder $query, string $field, string $direction, Model $model, array $context = []): bool
+            public function resolve(object $query, string $field, string $direction, Model $model, array $context = []): bool
             {
                 if ($field !== 'title_length') {
                     return false;
@@ -83,7 +82,7 @@ class SortingTest extends TestCase
     public function test_sort_resolver_receives_context(): void
     {
         $resolver = new class () implements SortResolver {
-            public function resolve(Builder $query, string $field, string $direction, Model $model, array $context = []): bool
+            public function resolve(object $query, string $field, string $direction, Model $model, array $context = []): bool
             {
                 if ($field !== 'above_threshold' || ! isset($context['threshold'])) {
                     return false;
@@ -108,7 +107,7 @@ class SortingTest extends TestCase
     public function test_sort_resolver_without_context_is_silently_ignored(): void
     {
         $resolver = new class () implements SortResolver {
-            public function resolve(Builder $query, string $field, string $direction, Model $model, array $context = []): bool
+            public function resolve(object $query, string $field, string $direction, Model $model, array $context = []): bool
             {
                 if ($field !== 'above_threshold' || ! isset($context['threshold'])) {
                     return false;

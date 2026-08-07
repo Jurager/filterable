@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jurager\Filterable\Tests\Fixtures;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Jurager\Filterable\Contracts\FieldResolver;
 use Jurager\Filterable\Contracts\SortResolver;
@@ -17,7 +16,7 @@ use Jurager\Filterable\Contracts\SortResolver;
  */
 class CheapFieldResolver implements FieldResolver, SortResolver
 {
-    public function resolve(Builder $query, string $name, mixed $value, Model $model, array $context = []): bool
+    public function resolve(object $query, string $name, mixed $value, Model $model, array $context = []): bool
     {
         if ($name === 'cheap') {
             $query->where('price', '<', (float) $value);
