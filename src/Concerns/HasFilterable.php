@@ -69,6 +69,16 @@ trait HasFilterable
     }
 
     /**
+     * Get the fields the model allows sorting on.
+     *
+     * @return array<int, string>
+     */
+    public function sortableFields(): array
+    {
+        return $this->filterablePropertyArray('sortable');
+    }
+
+    /**
      * Get the resolvers declared on the model, as class strings or instances.
      *
      * Exposed so other engines — a search index, for one — can run the same resolvers over their own
