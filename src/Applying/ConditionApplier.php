@@ -175,7 +175,8 @@ class ConditionApplier
         $relationName = $parts[0];
 
         if ($this->tree->isTreeRequest($operators, $value)) {
-            $this->tree->applyThroughRelation($query, $relationName, $value['tree']);
+
+            $this->tree->applyThroughRelation($query, implode('.', $parts), $value['tree']);
 
             return;
         }
