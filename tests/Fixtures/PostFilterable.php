@@ -17,6 +17,7 @@ class PostFilterable extends Filterable
         'published_at'          => ['null', 'not_null'],
         'category.name'         => ['eq', 'like'],
         'tags.name'             => ['eq', 'in'],
+        'tags.id'               => ['eq', 'in'],
         'tags.pivot.weight'     => ['gte', 'lte'],
         'prices.price_type_id'  => ['eq', 'in'],
     ];

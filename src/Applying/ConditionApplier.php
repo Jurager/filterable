@@ -189,7 +189,7 @@ class ConditionApplier
         }
 
         $query->whereHas(implode('.', $parts), function (Builder $q) use ($column, $operators, $value): void {
-            $this->operators->apply($q, $column, $operators, $value);
+            $this->operators->apply($q, $q->getModel()->qualifyColumn($column), $operators, $value);
         });
     }
 }

@@ -74,6 +74,7 @@ abstract class TestCase extends BaseTestCase
         });
 
         Schema::create('post_tag', function (Blueprint $table): void {
+            $table->id(); // pivot's own `id` deliberately collides with `tags.id` — regression coverage for ambiguous-column bug
             $table->foreignId('post_id');
             $table->foreignId('tag_id');
             $table->unsignedInteger('weight')->default(0);

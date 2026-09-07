@@ -138,6 +138,18 @@ class FilteringTest extends TestCase
         $this->assertSame(['Alpha Phone', 'Gamma Gadget'], $titles->all());
     }
 
+    public function test_relation_in_filter_with_column_name_colliding_with_pivot(): void
+    {
+        // `post_tag` has its own `id` column, so an unqualified `id in (...)`
+        // inside the whereHas subquery would be ambiguous between `tags` and
+        // `post_tag`. The leaf column must be qualified against `tags`.
+        $sale = Tag::where('name', 'sale')->firstOrFail();
+
+        $titles = Post::query()->filter(['tags.id' => ['in' => [$sale->id]]])->pluck('title')->sort()->values();
+
+        $this->assertSame(['Alpha Phone', 'Gamma Gadget'], $titles->all());
+    }
+
     public function test_pivot_column_filter(): void
     {
         $titles = Post::query()->filter(['tags.pivot.weight' => ['gte' => 5]])->pluck('title')->sort()->values();
