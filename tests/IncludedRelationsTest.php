@@ -54,6 +54,11 @@ class IncludedRelationsTest extends TestCase
         $this->assertSame('Alpha Phone', $posts->first()->title);
     }
 
+    // -----------------------------------------------------------------------
+    // loadIncludedRelations() — the per-model path, for a single model whose
+    // query never went through filter() (e.g. Model::find() on a show endpoint).
+    // -----------------------------------------------------------------------
+
     public function test_load_included_relations_skips_a_relation_already_loaded_by_the_query(): void
     {
         $filter = ['included.prices.price_type_id' => ['in' => [1]]];
@@ -87,5 +92,66 @@ class IncludedRelationsTest extends TestCase
 
         $this->assertTrue($alpha->relationLoaded('prices'));
         $this->assertCount(1, $alpha->prices);
+    }
+
+    // -----------------------------------------------------------------------
+    // loadIncludedRelationsForMany() — the collection counterpart, for results
+    // that never went through filter() at all (e.g. a search engine's hits).
+    // -----------------------------------------------------------------------
+
+    public function test_load_included_relations_for_many_batches_into_one_query(): void
+    {
+        // Fetched independently of filter() — mirrors search-engine hits hydrated via
+        // whereIn(id, ...), so neither post carries "prices" yet.
+        $posts = Post::query()->whereIn('id', [$this->alpha->id, $this->beta->id])->get();
+
+        foreach ($posts as $post) {
+            $this->assertFalse($post->relationLoaded('prices'));
+        }
+
+        DB::enableQueryLog();
+
+        Post::loadIncludedRelationsForMany($posts, ['included.prices.price_type_id' => ['in' => [1]]]);
+
+        $priceQueries = array_filter(DB::getQueryLog(), fn ($q) => str_contains($q['query'], '"prices"'));
+
+        $this->assertCount(1, $priceQueries, 'one relation, one batched query — not one per model.');
+
+        foreach ($posts as $post) {
+            $this->assertTrue($post->relationLoaded('prices'));
+            $this->assertTrue($post->prices->every(fn ($price) => (int) $price->price_type_id === 1));
+        }
+
+        $alpha = $posts->firstWhere('id', $this->alpha->id);
+
+        $this->assertCount(1, $alpha->prices);
+    }
+
+    public function test_load_included_relations_for_many_skips_a_relation_already_loaded(): void
+    {
+        $filter = ['included.prices.price_type_id' => ['in' => [1]]];
+
+        $posts = Post::query()->filter($filter)->get();
+
+        DB::enableQueryLog();
+
+        Post::loadIncludedRelationsForMany($posts, $filter);
+
+        $this->assertSame([], DB::getQueryLog(), 'loadIncludedRelationsForMany() re-queried a relation the query builder already loaded.');
+
+        DB::disableQueryLog();
+    }
+
+    public function test_load_included_relations_for_many_does_nothing_for_an_empty_collection(): void
+    {
+        $empty = Post::query()->whereRaw('1 = 0')->get();
+
+        DB::enableQueryLog();
+
+        Post::loadIncludedRelationsForMany($empty, ['included.prices.price_type_id' => ['in' => [1]]]);
+
+        $this->assertSame([], DB::getQueryLog());
+
+        DB::disableQueryLog();
     }
 }

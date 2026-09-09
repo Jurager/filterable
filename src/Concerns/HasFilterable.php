@@ -175,7 +175,15 @@ trait HasFilterable
         return parent::resolveRouteBinding($value, $field);
     }
 
-     /** Eager-load relations scoped by included conditions. */
+    /**
+     * Eager-load relations scoped by included conditions.
+     *
+     * Meant for a single already-fetched model whose query never went through `filter()` — e.g. a
+     * `find()` on a show endpoint. When the model came from a query that *did* call `filter()`,
+     * `Filterable::apply()` already eager-loaded these same relations, scoped the same way, for
+     * the whole result set in one query; skip a relation already loaded rather than re-fetching it
+     * one model at a time (`WithEagerIncludes` calls this per model in a listing's result set).
+     */
     public function loadIncludedRelations(array $filter): static
     {
         $included = ParsedFilters::extractIncluded($filter);
@@ -199,6 +207,41 @@ trait HasFilterable
         }
 
         return $this;
+    }
+
+    /**
+     * Eager-load relations scoped by included conditions, batched for a whole collection.
+     *
+     * The collection counterpart of {@see loadIncludedRelations()} — for results that never
+     * touched `filter()` at all, so none of them carry the relation, and there's no query-builder
+     * eager load to defer to (e.g. a search engine's results, hydrated via `whereIn(id, ...)`
+     * rather than a filtered query). Loading those one model at a time is the exact N+1
+     * `loadIncludedRelations()` exists to avoid on the filtered path; this does it once for the
+     * whole set, the same way `Filterable::apply()` would have.
+     *
+     * @param  \Illuminate\Support\Collection<int, static>  $models
+     */
+    public static function loadIncludedRelationsForMany($models, array $filter): void
+    {
+        if ($models->isEmpty()) {
+            return;
+        }
+
+        $included = ParsedFilters::extractIncluded($filter);
+
+        if (empty($included)) {
+            return;
+        }
+
+        $template = $models->first();
+
+        foreach ($template->newFilterable()->filterableRelations($included, $template) as $relation => $callback) {
+            if ($template->relationLoaded($relation)) {
+                continue;
+            }
+
+            $models->loadMissing([$relation => $callback]);
+        }
     }
 
     /**
