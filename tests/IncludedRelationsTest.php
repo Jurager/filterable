@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jurager\Filterable\Tests;
 
+use Illuminate\Support\Facades\DB;
 use Jurager\Filterable\Tests\Fixtures\Post;
 
 class IncludedRelationsTest extends TestCase
@@ -51,5 +52,40 @@ class IncludedRelationsTest extends TestCase
 
         $this->assertCount(1, $posts);
         $this->assertSame('Alpha Phone', $posts->first()->title);
+    }
+
+    public function test_load_included_relations_skips_a_relation_already_loaded_by_the_query(): void
+    {
+        $filter = ['included.prices.price_type_id' => ['in' => [1]]];
+
+        // filter()->get() already eager-loads "prices" for the whole result set, scoped the
+        // same way loadIncludedRelations() would — mirrors what WithEagerIncludes does: filter
+        // a listing at the query level, then call loadIncludedRelations() per model.
+        $posts = Post::query()->filter($filter)->get();
+
+        DB::enableQueryLog();
+
+        foreach ($posts as $post) {
+            $post->loadIncludedRelations($filter);
+        }
+
+        $this->assertSame([], DB::getQueryLog(), 'loadIncludedRelations() re-queried a relation the query builder already loaded.');
+
+        DB::disableQueryLog();
+    }
+
+    public function test_load_included_relations_still_loads_a_relation_the_query_never_touched(): void
+    {
+        // A model fetched without filter() — e.g. Model::find() on a show endpoint — never had
+        // "prices" eager-loaded. loadIncludedRelations() is what applies the included scope there,
+        // and must still run the query in that case.
+        $alpha = Post::query()->find($this->alpha->id);
+
+        $this->assertFalse($alpha->relationLoaded('prices'));
+
+        $alpha->loadIncludedRelations(['included.prices.price_type_id' => ['in' => [1]]]);
+
+        $this->assertTrue($alpha->relationLoaded('prices'));
+        $this->assertCount(1, $alpha->prices);
     }
 }

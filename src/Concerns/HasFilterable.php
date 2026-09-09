@@ -78,14 +78,7 @@ trait HasFilterable
         return $this->filterablePropertyArray('sortable');
     }
 
-    /**
-     * Get the resolvers declared on the model, as class strings or instances.
-     *
-     * Exposed so other engines — a search index, for one — can run the same resolvers over their own
-     * query objects instead of each defining a parallel set.
-     *
-     * @return array<int, object|class-string>
-     */
+    /** Get the resolvers declared on the model, as class strings or instances. */
     public function filterableResolvers(): array
     {
         return $this->filterablePropertyArray('resolvers');
@@ -182,7 +175,7 @@ trait HasFilterable
         return parent::resolveRouteBinding($value, $field);
     }
 
-    /** Eager-load relations scoped by included conditions. */
+     /** Eager-load relations scoped by included conditions. */
     public function loadIncludedRelations(array $filter): static
     {
         $included = ParsedFilters::extractIncluded($filter);
@@ -192,6 +185,10 @@ trait HasFilterable
         }
 
         foreach ($this->newFilterable()->filterableRelations($included, $this) as $relation => $callback) {
+
+            if ($this->relationLoaded($relation)) {
+                continue;
+            }
 
             /** @var Relation $query */
             $query = $this->{$relation}();
