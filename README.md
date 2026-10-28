@@ -4,6 +4,7 @@
 [![Total Downloads](https://poser.pugx.org/jurager/filterable/downloads)](https://packagist.org/packages/jurager/filterable)
 [![PHP Version Require](https://poser.pugx.org/jurager/filterable/require/php)](https://packagist.org/packages/jurager/filterable)
 [![License](https://poser.pugx.org/jurager/filterable/license)](https://packagist.org/packages/jurager/filterable)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/jurager01)
 
 A Laravel package that adds JSON:API-compatible `filter` and `sort` query parameter support to Eloquent models.
 
