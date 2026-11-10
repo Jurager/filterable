@@ -20,6 +20,7 @@ class PostFilterable extends Filterable
         'tags.id'               => ['eq', 'in'],
         'tags.pivot.weight'     => ['gte', 'lte'],
         'prices.price_type_id'  => ['eq', 'in'],
+        'prices.amount'         => ['gte', 'lte'],
     ];
 
     protected array $sortable = ['id', 'title', 'price', 'created_at'];

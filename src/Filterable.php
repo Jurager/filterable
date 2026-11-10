@@ -156,20 +156,24 @@ class Filterable
      */
     public function filterableRelations(array $included, Model $model): array
     {
-        $result = [];
+        $conditions = [];
 
         foreach ($included as $key => $value) {
 
-            if (! is_string($key) || ! str_contains($key, '.')) {
+            if (! is_string($key) || ! str_contains($key, '.') || ! array_key_exists($key, $this->filterable)) {
                 continue;
             }
 
             [$relation, $column] = explode('.', $key, 2);
 
-            if (isset($result[$relation])
-                || ! array_key_exists($key, $this->filterable)
-                || ! $model->isRelation($relation)
-            ) {
+            $conditions[$relation][$column] = $value;
+        }
+
+        $result = [];
+
+        foreach ($conditions as $relation => $filter) {
+
+            if (! $model->isRelation($relation)) {
                 continue;
             }
 
@@ -177,7 +181,7 @@ class Filterable
             $uses    = self::$traitCache[$related::class] ??= class_uses_recursive($related);
 
             if (in_array(HasFilterable::class, $uses, true)) {
-                $result[$relation] = static fn ($q) => $q->filter([$column => $value]);
+                $result[$relation] = static fn ($q) => $q->filter($filter);
             }
         }
 

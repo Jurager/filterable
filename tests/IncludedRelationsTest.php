@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace Jurager\Filterable\Tests;
 
 use Illuminate\Support\Facades\DB;
+use Jurager\Filterable\Filterable;
 use Jurager\Filterable\Tests\Fixtures\Post;
 
 class IncludedRelationsTest extends TestCase
 {
+    private const array TWO_PRICE_CONDITIONS = [
+        'included.prices.price_type_id' => ['in' => [1]],
+        'included.prices.amount'        => ['gte' => 100],
+    ];
+
     private Post $alpha;
 
     private Post $beta;
@@ -54,6 +60,27 @@ class IncludedRelationsTest extends TestCase
         $this->assertSame('Alpha Phone', $posts->first()->title);
     }
 
+    public function test_every_included_condition_on_one_relation_scopes_the_eager_load(): void
+    {
+        $posts = Post::query()->filter(self::TWO_PRICE_CONDITIONS)->get();
+
+        $this->assertCount(2, $posts);
+        $this->assertSame([150], $this->loadedAmounts($posts->firstWhere('id', $this->alpha->id)));
+        $this->assertSame([], $this->loadedAmounts($posts->firstWhere('id', $this->beta->id)));
+    }
+
+    public function test_undeclared_included_condition_is_ignored_while_the_declared_one_applies(): void
+    {
+        $query = Post::query();
+
+        (new Filterable(['prices.price_type_id' => ['in']]))->apply($query, self::TWO_PRICE_CONDITIONS);
+
+        $posts = $query->get();
+
+        $this->assertSame([150], $this->loadedAmounts($posts->firstWhere('id', $this->alpha->id)));
+        $this->assertSame([20], $this->loadedAmounts($posts->firstWhere('id', $this->beta->id)));
+    }
+
     // -----------------------------------------------------------------------
     // loadIncludedRelations() — the per-model path, for a single model whose
     // query never went through filter() (e.g. Model::find() on a show endpoint).
@@ -94,6 +121,15 @@ class IncludedRelationsTest extends TestCase
         $this->assertCount(1, $alpha->prices);
     }
 
+    public function test_load_included_relations_applies_every_condition_on_one_relation(): void
+    {
+        $alpha = Post::query()->find($this->alpha->id)->loadIncludedRelations(self::TWO_PRICE_CONDITIONS);
+        $beta  = Post::query()->find($this->beta->id)->loadIncludedRelations(self::TWO_PRICE_CONDITIONS);
+
+        $this->assertSame([150], $this->loadedAmounts($alpha));
+        $this->assertSame([], $this->loadedAmounts($beta));
+    }
+
     // -----------------------------------------------------------------------
     // loadIncludedRelationsForMany() — the collection counterpart, for results
     // that never went through filter() at all (e.g. a search engine's hits).
@@ -127,6 +163,16 @@ class IncludedRelationsTest extends TestCase
         $this->assertCount(1, $alpha->prices);
     }
 
+    public function test_load_included_relations_for_many_applies_every_condition_on_one_relation(): void
+    {
+        $posts = Post::query()->whereIn('id', [$this->alpha->id, $this->beta->id])->get();
+
+        Post::loadIncludedRelationsForMany($posts, self::TWO_PRICE_CONDITIONS);
+
+        $this->assertSame([150], $this->loadedAmounts($posts->firstWhere('id', $this->alpha->id)));
+        $this->assertSame([], $this->loadedAmounts($posts->firstWhere('id', $this->beta->id)));
+    }
+
     public function test_load_included_relations_for_many_skips_a_relation_already_loaded(): void
     {
         $filter = ['included.prices.price_type_id' => ['in' => [1]]];
@@ -153,5 +199,12 @@ class IncludedRelationsTest extends TestCase
         $this->assertSame([], DB::getQueryLog());
 
         DB::disableQueryLog();
+    }
+
+    private function loadedAmounts(Post $post): array
+    {
+        $this->assertTrue($post->relationLoaded('prices'));
+
+        return $post->prices->map(fn ($price) => (int) $price->amount)->all();
     }
 }

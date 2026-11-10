@@ -18,6 +18,7 @@ class Price extends Model
 
     protected array $filterable = [
         'price_type_id' => ['eq', 'in'],
+        'amount'        => ['gte', 'lte'],
     ];
 
     public function post(): BelongsTo

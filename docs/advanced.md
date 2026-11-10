@@ -130,17 +130,26 @@ Do **not** add the field to `$sortable` — resolvers are only called for fields
 
 `HasFilterable` overrides `resolveRouteBinding()` to support EAV attribute lookups: when the route key differs from the primary key and the model has a `whereAttribute()` scope (from `jurager/eav`), it looks the model up by that attribute instead of a plain column.
 
-`filter[included.*]` eager-loading (see [Filtered Eager-Loading](relations.md#filtered-eager-loading-included)) is applied separately and automatically to **every** model retrieval — including route model binding — via a global `Model::retrieved` listener registered by the service provider. No manual wiring is required:
+`filter[included.*]` eager-loading (see [Filtered Eager-Loading](relations.md#filtered-eager-loading-included)) is applied by `filter()`, so a bound model comes without it. Load the scoped relations with `loadIncludedRelations()`:
 
 ```php
 // Route definition
 Route::get('/products/{product}', [ProductController::class, 'show']);
 
-// Request — eager-loads prices restricted to price_type_id = 1
+// Request — loads prices restricted to price_type_id = 1
 GET /products/42?filter[included.prices.price_type_id][in]=1
 ```
 
-The resolved `Product` instance will have `prices` already loaded with the filter applied. Disable this globally with `FILTERABLE_AUTO_LOAD_INCLUDED_RELATIONS=false` (see [Installation](installation.md)) — with it disabled, call `$model->loadIncludedRelations($filter)` yourself wherever you need it.
+```php
+public function show(Request $request, Product $product): JsonResponse
+{
+    $product->loadIncludedRelations($request->query('filter', []));
+
+    return response()->json($product);
+}
+```
+
+Relations the model has already loaded are left as they are. For a collection fetched without `filter()`, such as search engine hits, `Product::loadIncludedRelationsForMany($products, $filter)` does the same with one query per relation for the whole collection.
 
 **Changing the lookup field**
 
