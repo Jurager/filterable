@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jurager\Filterable\Parsing;
 
+use Jurager\Filterable\Exceptions\InvalidEncodingException;
 use Jurager\Filterable\Support\FilterOperator;
 use Jurager\Filterable\Support\ParsedFilters;
 
@@ -13,6 +14,10 @@ class FilterParser
     /** Parse raw filter input into a structured ParsedFilters instance. */
     public function parse(array $raw, array $filterable): ParsedFilters
     {
+        if (! mb_check_encoding($raw, 'UTF-8')) {
+            throw new InvalidEncodingException();
+        }
+
         $orGroups  = $this->extractOrGroups($raw);
         $andGroups = $this->extractAndGroups($raw);
         $included  = $this->extractIncludedFilters($raw);

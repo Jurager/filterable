@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Jurager\Filterable\Tests;
 
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Jurager\Filterable\Exceptions\InvalidBetweenOperandException;
+use Jurager\Filterable\Exceptions\InvalidEncodingException;
 use Jurager\Filterable\Exceptions\OperatorNotAllowedException;
 use Jurager\Filterable\Exceptions\TooManyFiltersException;
 use Jurager\Filterable\Exceptions\TooManyValuesException;
@@ -230,5 +233,28 @@ class FilteringTest extends TestCase
         $this->expectException(InvalidBetweenOperandException::class);
 
         Post::query()->filter(['price' => ['between' => [10]]])->get();
+    }
+
+    public function test_invalid_utf8_value_is_rejected_with_400(): void
+    {
+        Route::get('/posts', fn (Request $request) => Post::query()->filter($request->query('filter', []))->pluck('title'));
+
+        $this->getJson('/posts?filter[title][like]=%D1')
+            ->assertStatus(400)
+            ->assertJson(['message' => 'Filter parameters must be valid UTF-8.']);
+    }
+
+    public function test_invalid_utf8_list_element_inside_group_throws(): void
+    {
+        $this->expectException(InvalidEncodingException::class);
+
+        Post::query()->filter(['or' => ['status' => ['in' => ['active', "\xD1"]]]])->get();
+    }
+
+    public function test_invalid_utf8_key_throws(): void
+    {
+        $this->expectException(InvalidEncodingException::class);
+
+        Post::query()->filter(["\xD1" => 'Phone'])->get();
     }
 }

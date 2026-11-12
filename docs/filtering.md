@@ -109,6 +109,10 @@ filter[sku]=&filter[status]=active   →  only status filter is applied
 
 This also applies inside operator arrays and list values (`in`, `nin`).
 
+## Encoding
+
+Filter keys and string values must be valid UTF-8, including inside operator arrays, lists, and groups. Malformed input returns HTTP 400 before any query is built.
+
 ## Limits
 
 | Property | Default | Description |
